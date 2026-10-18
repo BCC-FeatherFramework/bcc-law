@@ -1,0 +1,692 @@
+[
+  {
+    "file": "client/client.lua",
+    "line": 98,
+    "kind": "RegisterNUICallback",
+    "name": "close"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 103,
+    "kind": "RegisterNUICallback",
+    "name": "searchPerson"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 113,
+    "kind": "RegisterNUICallback",
+    "name": "updatePenalCode"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 123,
+    "kind": "RegisterNUICallback",
+    "name": "createReport"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 127,
+    "kind": "RegisterNUICallback",
+    "name": "newFine"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 131,
+    "kind": "RegisterNUICallback",
+    "name": "jailPerson"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 135,
+    "kind": "RegisterNUICallback",
+    "name": "createWarrant"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 139,
+    "kind": "RegisterNUICallback",
+    "name": "addNote"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 144,
+    "kind": "RegisterNUICallback",
+    "name": "vehicleSearch"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 178,
+    "kind": "RegisterNUICallback",
+    "name": "mdtRpc"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 253,
+    "kind": "RegisterNUICallback",
+    "name": "mdtClientAction"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 280,
+    "kind": "RPC:Register",
+    "name": "bcc-law:OpenMDT"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 284,
+    "kind": "RegisterCommand",
+    "name": "mdt"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 360,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:SyncPayrollSettings"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 377,
+    "kind": "RPC:Register",
+    "name": "bcc-law:NotifyClient"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 717,
+    "kind": "RPC:Register",
+    "name": "bcc-law:ServicePlayer"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 871,
+    "kind": "RPC:Register",
+    "name": "bcc-law:PlayerInWagon"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 903,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:StartSearch"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 914,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetSearch"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 924,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:senddata"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 942,
+    "kind": "RegisterNetEvent",
+    "name": "vorp:SelectedCharacter"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1003,
+    "kind": "RPC:Register",
+    "name": "bcc-law:OnDutyState"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1045,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:badgeon"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1105,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:goonduty"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1324,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:drag"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1332,
+    "kind": "RPC:Register",
+    "name": "bcc-law:DoJail"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1428,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:wear_prison"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1447,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:UnjailPlayer"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1498,
+    "kind": "RPC:Register",
+    "name": "bcc-law:cuffs"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1502,
+    "kind": "RPC:Register",
+    "name": "bcc-law:unlockcuffs"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1518,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:lockpick"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1601,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:handcuff"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1620,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:HandcuffsChecked"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1628,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:lockpicked"
+  },
+  {
+    "file": "client/client.lua",
+    "line": 1669,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:witness"
+  },
+  {
+    "file": "client/controlsMenu.lua",
+    "line": 18,
+    "kind": "RegisterCommand",
+    "name": "ctrl"
+  },
+  {
+    "file": "client/functions.lua",
+    "line": 360,
+    "kind": "RegisterCommand",
+    "name": "spawnrider"
+  },
+  {
+    "file": "client/functions.lua",
+    "line": 414,
+    "kind": "RegisterCommand",
+    "name": "clearrider"
+  },
+  {
+    "file": "client/functions.lua",
+    "line": 426,
+    "kind": "RegisterCommand",
+    "name": "cuffrider"
+  },
+  {
+    "file": "client/mdtMenu.lua",
+    "line": 915,
+    "kind": "RPC:Register",
+    "name": "bcc-law:OpenMDT"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1,
+    "kind": "RPC:Register",
+    "name": "bcc-law:ShootAlarm"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 16,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetLawJobs"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 253,
+    "kind": "RPC:Register",
+    "name": "bcc-law:PayFineBill"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 281,
+    "kind": "RPC:Register",
+    "name": "bcc-law:ListFineBills"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 288,
+    "kind": "RPC:Register",
+    "name": "bcc-law:PayFineBillById"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 336,
+    "kind": "RPC:Register",
+    "name": "bcc-law:NotifyUnpaidBills"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 377,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetGrabData"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 395,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GivePaycheck"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 438,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GoOnDuty"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 443,
+    "kind": "RPC:Register",
+    "name": "bcc-law:ToggleDuty"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 458,
+    "kind": "RPC:Register",
+    "name": "bcc-law:SynSociety"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 476,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GoOffDuty"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 486,
+    "kind": "RPC:Register",
+    "name": "bcc-law:FinePlayer"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 606,
+    "kind": "RPC:Register",
+    "name": "bcc-law:RequestJail"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 652,
+    "kind": "RPC:Register",
+    "name": "bcc-law:CommunityService"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 663,
+    "kind": "RPC:Register",
+    "name": "bcc-law:FinishedJail"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 716,
+    "kind": "RPC:Register",
+    "name": "bcc-law:Unjail"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 726,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetCitizenId"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 749,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetVehicleInfo"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 776,
+    "kind": "RPC:Register",
+    "name": "bcc-law:Handcuff"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 785,
+    "kind": "RPC:Register",
+    "name": "bcc-law:Lockpick"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 805,
+    "kind": "RPC:Register",
+    "name": "bcc-law:Drag"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 817,
+    "kind": "RPC:Register",
+    "name": "bcc-law:UpdateService"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 830,
+    "kind": "RPC:Register",
+    "name": "bcc-law:EndService"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 843,
+    "kind": "RPC:Register",
+    "name": "bcc-law:JailedService"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 857,
+    "kind": "RPC:Register",
+    "name": "bcc-law:CheckJail"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 907,
+    "kind": "RegisterNetEvent",
+    "name": "bcc-law:jailbreak"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 912,
+    "kind": "RPC:Register",
+    "name": "bcc-law:Jailbreak"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 926,
+    "kind": "RPC:Register",
+    "name": "bcc-law:TakeTime"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 945,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GunCabinet"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 970,
+    "kind": "RPC:Register",
+    "name": "bcc-law:AddAmmo"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 988,
+    "kind": "RPC:Register",
+    "name": "bcc-law:LockpickBreak"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1017,
+    "kind": "RPC:Register",
+    "name": "bcc-law:HasLockpick"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1266,
+    "kind": "RPC:Register",
+    "name": "bcc-law:PoliceNotify"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1363,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetPlayerWagonID"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1373,
+    "kind": "RPC:Register",
+    "name": "bcc-law:TakeFrom"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1384,
+    "kind": "RPC:Register",
+    "name": "bcc-law:ReloadInventory"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1398,
+    "kind": "RPC:Register",
+    "name": "bcc-law:CommisaryAddItem"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1407,
+    "kind": "RPC:Register",
+    "name": "bcc-law:CheckHandcuffs"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1424,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetPlayerJob"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1434,
+    "kind": "RPC:Register",
+    "name": "bcc-law:IsAuthorizedJob"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1439,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetPayrollSettings"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1443,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetPenalCodes"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1448,
+    "kind": "RPC:Register",
+    "name": "bcc-law:RegisterStorage"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 1457,
+    "kind": "RPC:Register",
+    "name": "bcc-law:OpenStorage"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2293,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetNuiMdtData"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2356,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetDashboard"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2361,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:SearchCitizens"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2375,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetCitizenProfile"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2381,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetPenalCodes"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2390,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:CreateCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2400,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2406,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:SearchCases"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2411,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:UpdateCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2420,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:AddSuspectToCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2429,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:AddOfficerToCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2439,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:AddChargeToCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2448,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:RemoveChargeFromCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2457,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:AddEvidence"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2466,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:AddCaseNote"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2475,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:CalculateSentence"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2480,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:SentenceCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2548,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:CloseCase"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2557,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:CreateWarrant"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2572,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetWarrants"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2577,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetBills"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2645,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:CloseWarrant"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2662,
+    "kind": "RPC:Register",
+    "name": "bcc-law:mdt:GetAuditLogs"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2685,
+    "kind": "RPC:Register",
+    "name": "bcc-law:UpdatePenalCode"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2718,
+    "kind": "RPC:Register",
+    "name": "bcc-law:GetMdtLogs"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2736,
+    "kind": "RPC:Register",
+    "name": "bcc-law:AddIncidentReport"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2788,
+    "kind": "RPC:Register",
+    "name": "bcc-law:NuiFineCitizen"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2848,
+    "kind": "RPC:Register",
+    "name": "bcc-law:NuiJailCitizen"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2901,
+    "kind": "RPC:Register",
+    "name": "bcc-law:NuiCreateWarrant"
+  },
+  {
+    "file": "server/server.lua",
+    "line": 2958,
+    "kind": "RegisterCommand",
+    "name": "law:job"
+  }
+]
