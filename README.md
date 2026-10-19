@@ -1,6 +1,6 @@
 # BCC Law — native Feather development build
 
-Version 2.0.0-alpha.5. This is a native implementation slice, **not the
+Version 2.0.0-alpha.9. This is a native implementation slice, **not the
 complete police resource**. Do not deploy it as a replacement for a working
 police system. The original uploaded package and UI are preserved outside this
 resource; see [baseline location](docs/BASELINE.md).
@@ -10,19 +10,25 @@ Core routes, active-duty/grade/qualification/policy checks, owner-scoped Justice
 case listing/creation, charge and arrest-warrant routes, participant operations, record access checks, a native MDT, durable citation obligations and own-wallet fine payment. No compatibility
 API or foreign-domain SQL is used.
 
+Warrant-backed cuffs and escort are available through the MDT's `Teren` tab or
+`/lawcuff <department> <player source> <arrest warrant UUID>`,
+`/lawuncuff <department> <player source>`,
+`/lawescort <department> <player source> <on|off>`.
+Both players must be nearby and alive, with a current character session.
+The explicit `law.restraint.manage` policy action is required in addition to
+duty/qualification; the installed Admin adapter checks qualified, on-duty police. These interactions do not create legal custody.
+See [restraint behavior and limits](docs/ALPHA6_CHECKPOINT.md).
+
 Not implemented yet: the remaining police gameplay,
-timed jail, community service, cuffs/escort/search, armory,
-evidence, payroll, alerts, doors, or historical data import. Capabilities report
-these gameplay features as zero. The original locations, translations and UI
+physical evidence return/destruction, payroll, alerts, doors, or historical data import. Unimplemented gameplay capabilities remain disabled. The original locations, translations and UI
 remain in the backup for the next porting slices.
 
 ## Dependencies and staging
 
 Required: feather-core, feather-character, feather-jobs, feather-licenses,
-feather-justice. Justice additionally requires feather-mysql.
+feather-justice. Law and Justice additionally require feather-mysql.
 Use coordinated compatible versions, with Core/MySQL before their consumers.
-Run `refresh` before starting the new manifests. No server configuration or
-running resource was changed during this implementation.
+Run `refresh` before starting the new manifests. No running resources were restarted; `server.cfg` was not edited.
 
 `config.lua` is server-only. Proposed initial defaults are `new_hanover`, job
 `police`, commission `peace_officer`, jurisdiction key `bcc-law:new_hanover`.
@@ -38,10 +44,11 @@ Before positive gameplay acceptance:
 2. Register the real police job/grades through Society/Jobs, and define/issue the
    required commission through Licenses. Configuration trust does not create either.
 3. Admin's server-only `configs/law_acceptance_policy.lua` recognizes the explicit
-   Justice actions behind the existing owner-only `roles.assignment.manage` gate.
-   It changes no fixed Admin catalog entries or player-role assignments. Law still
-   checks duty, grade and commission; Justice checks session and case eligibility.
-   This is staging policy; final officer/judge/jurisdiction authority remains open.
+   Justice actions using fresh duty, grade and commission checks. Police powers
+   require qualified on-duty police; judicial powers require the configured judge
+   assignment and judicial commission. Justice also enforces case eligibility and
+   judge participation. Audit history additionally requires Admin audit permission.
+   No fixed Admin catalog entries or player-role assignments are changed.
 4. Explicit definition setup uses source 0 and `justice.definition.manage`.
    With the existing Admin service-policy provider, the principal is
    `Config.servicePolicy['feather-justice']['bcc-law']`. Add only the reviewed
@@ -64,7 +71,7 @@ there is no permissive fallback and no setup performed against the live server.
 
 All routes require an active Core character session. No route accepts an actor
 identity or jurisdiction from the client. Rate: five calls per five seconds per
-route; payload limit 8192 bytes, depth 2, nodes 12.
+route; payload limit 8192 bytes, depth 2, nodes 12 by default; ruling findings use bounded deeper limits.
 
 | Route | Payload | Result |
 |---|---|---|
@@ -72,7 +79,7 @@ route; payload limit 8192 bytes, depth 2, nodes 12.
 | `law.cases.list.v1` | `{ department, cursor? }` | Justice case page, maximum 25 |
 | `law.cases.open.v1` | `{ department, requestId, title, summary }` | Committed case or an error envelope |
 
-Alpha.5 exposes 30 routes, including parties, case edits/transitions, statute lists, citations, custody and operation recovery. See [legal route fields and required policy](docs/LEGAL_ROUTES.md).
+Alpha.9 exposes 65 routes, including parties, case edits/transitions, statute lists, citations, custody, restraints and operation recovery. See [legal route fields and required policy](docs/LEGAL_ROUTES.md).
 The MDT uses only these typed server routes. See [alpha.5 checkpoint](docs/ALPHA5_CHECKPOINT.md).
 
 Open requests are scoped to the authenticated character; `requestId` is at most
@@ -100,8 +107,11 @@ base case resource but required for citation issuance and payment; start it befo
 Justice/Law for financial testing. Its client routes must be enabled for `/lawfines`.
 
 Alpha.5 adds manual custody booking/confirmation/release with server-side location
-guards; [custody API and limits](../../[feather]/feather-justice/CUSTODY.md). No
-automatic teleport, sentence clock or timed jail is claimed.
+guards; [custody API and limits](../../[feather]/feather-justice/CUSTODY.md). Alpha.9 adds separate sentence-based physical execution; manual booking alone
+does not create a sentence.
+
+The agreed sentence policy is **elapsed time continues while offline**. Reconnect
+uses the authoritative Justice deadline through the implemented sentence contract. The physical restraint timeout is separate from any legal sentence.
 
 If preflight reports `character_not_in_active_session`, console-only
 `LawActiveCharacters` lists UUIDs of currently selected Core characters. Stored
@@ -113,3 +123,25 @@ Live checks with aligned PASS/FAIL/SKIP and a final tally:
 `LawAcceptanceTest <A UUID> <B UUID> [freshRunId]` writes tagged legal test records.
 Separate `finance`, `custody`, `resume` and `cleanup` modes are documented in
 [acceptance commands](docs/ACCEPTANCE_TESTS.md). No job/license/policy bypass exists.
+
+
+Read-only warranted searches are available in `Teren`. Inventory must include
+`server/services/law_search.lua`; Justice must support search warrants. Each page
+rechecks the officer, target, restraint, warrant and proximity. Explicitly finish
+the search to serve the warrant. No writable inventory access or confiscation is
+granted. See [search checkpoint](docs/ALPHA7_CHECKPOINT.md) and
+[Law acknowledgement of Claude's agreement](docs/JUSTICE_INTEGRATION_REVIEW.md).
+
+
+Alpha.8 adds private evidence lockers, durable instance-preserving collection
+receipts, Justice evidence links, explicit recovery and legal disposition controls.
+Use case → `Probe`. Review [evidence setup, recovery and limitations](docs/EVIDENCE.md)
+before explicitly running console `LawSetupEvidenceLockers` on staging. Physical
+returns/destruction and complete custody history for future external moves remain
+open. No live lockers, migrations, collections or dispositions were performed.
+
+Alpha.9 adds court rulings, all seven sentence forms, privacy controls, UTC jail
+placement/release, observed community service and a durable daily-quota armory.
+Use `/lawstatus` for your own sentence/task status. Review
+[the current checkpoint](docs/ALPHA9_CHECKPOINT.md) for configuration, persistence,
+provider requirements and the remaining live acceptance gates.

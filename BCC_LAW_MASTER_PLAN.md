@@ -297,7 +297,8 @@ Nu se declară Law portat complet doar pentru că pornește sau se deschide MDT.
 2. Politica mandatelor, arestului fără mandat și motivelor de eliberare.
 3. Beneficiarul amenzilor: sistem sau trezorerie de organizație; plăți parțiale
    numai dacă sunt suportate explicit de contractele reale.
-4. Timp offline/online, cumulul sentințelor și efectul evadării/community service.
+4. Decizie utilizator 2026-10-19: timpul sentinței continuă offline, folosind
+   deadline-ul UTC autoritar Justice. Cumulul și efectul evadării/community service rămân deschise.
 5. Contractul calificărilor Licenses și membership/payroll Society.
 6. Dovezi Inventory: identitate, holds, mutare, consum/distrugere și redacție.
 7. Clean install versus import; retenție, dosare sigilate și expungement.
@@ -306,7 +307,14 @@ Nu se declară Law portat complet doar pentru că pornește sau se deschide MDT.
    artificial încă un produs; raportăm separat acest gate din masterplanul Justice.
 9. Alerte/Mailbox/minigame: provider compatibil, opționalitate și failure semantics.
 
-## 12. Stadiul curent și următorul pas — alpha.5
+## 12. Stadiul curent și următorul pas — alpha.8
+
+Actualizare alpha.6 (2026-10-19): cuffs/escort native, cu mandat activ, policy
+explicit, distanță/session guards și cleanup; 34 rute. Justice este lucrat separat
+de Claude și nu a fost modificat în această felie. Timpul sentinței va continua
+offline conform deciziei utilizatorului. Contractul de sentințe Justice nu există
+încă în providerul inspectat; jail nu este declarat implementat.
+Vezi `docs/ALPHA6_CHECKPOINT.md` pentru limite și gates deschise.
 
 LAW1 și integrarea LAW2 există ca implementare nativă; acceptanța live rămâne deschisă.
 LAW4 include dosare, participanți, acces pe dosar, acuzații, mandate de arestare și
@@ -318,3 +326,11 @@ cu două personaje și MariaDB. Configurațiile pregătite sunt fragmente neacti
 Licenses și Access nu au fost modificate. Booking/custodie are acum rezervare, confirmare fizică și eliberare explicită;
 plasarea/reconectarea și sentințele rămân separate. Citările au acum integrare durabilă Contracts și plata proprie prin
 `/lawfines`; rămân deschise validarea financiară reală și politica finală. Vezi `docs/ALPHA5_CHECKPOINT.md` pentru limitele exacte.
+
+
+Alpha.8 (2026-10-19): 44 rute; Inventory mută instanța în locker privat cu receipt
+atomic/idempotent și limită de capacitate, apoi Law leagă proba prin Justice.
+MDT include colectare, istoric propriu, recovery/link nou confirmat și dispoziții
+juridice. Dispozițiile nu returnează/distrug fizic obiectul. Niciun fișier Justice
+nu a fost modificat. Vezi `docs/EVIDENCE.md`; acceptanța MariaDB/RedM și istoricul
+complet al mutărilor viitoare rămân gates distincte, nu sunt declarate închise.

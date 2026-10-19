@@ -61,6 +61,7 @@ local function Presence(actor,subjectId,facilityKey,department)
     if not Law.Current(actor) or not Law.Current(target.value) then return Law.Err('session_expired','Character changed.') end
     return target
 end
+Law.BookingPresence=Presence
 local function Mutation(p,actor,reason)
     return {actorSource=actor.source,requestId=actor.characterId..':'..p.requestId,reasonCode=reason,caseId=p.caseId}
 end

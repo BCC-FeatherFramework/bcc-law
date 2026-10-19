@@ -7,6 +7,15 @@ for _,name in ipairs({'cases.list','cases.open','cases.get','cases.update','case
 end
 operations['debts.list']='contracts.obligations.list.v1'
 operations['debts.settle']='contracts.obligation.settle.v1'
+operations['search.inspect']='law.search.inspect.v1'
+operations['search.finish']='law.search.finish.v1'
+for _,name in ipairs({'stations','catalog','claim','claims'}) do operations['armory.'..name]='law.armory.'..name..'.v1' end
+operations['warrants.search.draft']='law.warrants.search.draft.v1'
+operations['warrants.seizure.draft']='law.warrants.seizure.draft.v1'
+operations['warrants.summons.draft']='law.warrants.summons.draft.v1'
+for _,name in ipairs({'rulings.list','rulings.record','sentences.list','sentences.create','sentences.activate','sentences.suspend','sentences.resume','sentences.vacate','charges.amend','cases.seal','cases.unseal','cases.expunge','cases.history','custody.sentence.reserve','execution.self','service.start'}) do operations[name]='law.'..name..'.v1' end
+for _,name in ipairs({'collect','receipts','attach','list','disposition','lockers'}) do operations['evidence.'..name]='law.evidence.'..name..'.v1' end
+for _,name in ipairs({'apply','release','escort'}) do operations['restraints.'..name]='law.restraints.'..name..'.v1' end
 local function Close()
     epoch=epoch+1;opened,opening,busy=false,false,false
     SetNuiFocus(false,false);SendNUIMessage({type='close'})
@@ -23,6 +32,10 @@ RegisterCommand('law',function(_,args)
         opened=true;SetNuiFocus(true,true)
         SendNUIMessage({type='open',epoch=epoch,departments=result.value.departments,department=args and args[1]})
     end)
+end,false)
+RegisterCommand('lawstatus',function()
+    Close();opened=true;SetNuiFocus(true,true)
+    SendNUIMessage({type='open',epoch=epoch,mode='inmate',departments={}})
 end,false)
 RegisterCommand('lawfines',function()
     Close();opened=true;SetNuiFocus(true,true)

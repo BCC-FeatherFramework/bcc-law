@@ -23,7 +23,9 @@ local function Poll()
         or type(justice.value.features) ~= 'table' or justice.value.features.cases ~= 1
         or justice.value.features.parties ~= 1 or justice.value.features.caseAccess ~= 1
         or justice.value.features.custodyBooking ~= 1 or justice.value.features.citations ~= 1
-        or justice.value.features.charges ~= 1 or justice.value.features.warrants ~= 1 then
+        or justice.value.features.charges ~= 1 or justice.value.features.warrants ~= 1
+        or justice.value.features.rulings~=1 or justice.value.features.sentences~=1
+        or justice.value.features.subjectStatus~=1 or justice.value.features.sentenceProgress~=1 then
         if Law.Health().value.phase ~= 'contract_unavailable' then Law.SetState('degraded', 'contract_unavailable') end
         return
     end

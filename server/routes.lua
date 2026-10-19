@@ -55,6 +55,6 @@ function Law.RegisterRoute(name, spec)
         if not ok then return Law.Err('operation_failed', 'Operation could not be confirmed; retain the request ID.') end
         return result
     end, { contract = 1, direction = 'client_to_server', requireCharacter = true,
-        maxPayloadBytes = 8192, maxDepth = 2, maxNodes = 12, windowMs = 5000, maxCalls = 5,
+        maxPayloadBytes = 8192, maxDepth = spec.maxDepth or 2, maxNodes = spec.maxNodes or 12, windowMs = 5000, maxCalls = 5,
         validatePayload = spec.validate })
 end

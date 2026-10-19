@@ -60,7 +60,8 @@ exports=setmetatable({
 GetResourceState=function() return available and 'started' or 'stopped' end
 GetGameTimer=function() return 0 end
 dofile('shared/results.lua');dofile('config.lua');dofile('server/foundation.lua')
-dofile('server/access.lua');dofile('server/routes.lua');dofile('server/legal_routes.lua');dofile('server/custody.lua');Law.SetState('ready','tests')
+AddEventHandler=function() end;CreateThread=function() end;RegisterCommand=function() end
+dofile('server/access.lua');dofile('server/routes.lua');dofile('server/legal_routes.lua');dofile('server/custody.lua');dofile('server/restraints.lua');dofile('server/search.lua');dofile('server/evidence.lua');dofile('server/court.lua');dofile('server/execution_store.lua');dofile('server/execution.lua');dofile('server/armory.lua');Law.SetState('ready','tests')
 for _,name in ipairs({'ProposeCharge','CreateWarrantDraft','ListCharges','ListCaseWarrants','ListActiveWarrants',
     'AddCaseParty','RemoveCaseParty','ListCaseParties','UpdateCaseSummary','TransitionCase','ListStatutes','RequestCitation','CancelCitation','ListCaseCitations','ReserveCustodyBooking','ConfirmCustodyBooking','ReleaseCustody','ListCaseCustody',
     'FileCharge','DisposeCharge','IssueWarrant','ServeWarrant','RecallWarrant','QuashWarrant'}) do
@@ -94,7 +95,7 @@ for name,spec in pairs(Law.Routes) do
     local registration=Law.RegisterRoute(name,spec);check('route registered '..name,registration.ok);count=count+1
     check('requires character '..name,registered[name].options.requireCharacter==true)
 end
-check('only native allowlisted routes',count==30)
+check('only native allowlisted routes',count==65)
 local list=registered['law.cases.list.v1']
 check('client jurisdiction injection denied',not list.options.validatePayload({department='new_hanover',jurisdictionId=uuid(8)}))
 check('bad cursor denied',not list.options.validatePayload({department='new_hanover',cursor='invalid'}))
@@ -147,8 +148,20 @@ setupCommands.LawCitationPreflight(5,{uuid(1),'new_hanover'})
 print=originalPrint
 check('preflight refuses numeric identity and non-console callers',enumerations==beforeEnumeration)
 print(('PASS Law: %d checks (mock services; no live acceptance)'):format(checks))
+dofile('tests/restraints.lua')
+dofile('tests/restraints_client.lua')
+dofile('tests/search.lua')
+dofile('tests/evidence_inventory.lua')
+dofile('tests/evidence.lua')
+dofile('tests/court.lua')
+dofile('tests/execution.lua')
+dofile('tests/execution_store.lua')
+dofile('tests/armory.lua')
+dofile('tests/medical_execution.lua')
 dofile('tests/lifecycle.lua')
 dofile('tests/client.lua')
 dofile('tests/contracts_routes.lua')
 dofile('tests/acceptance.lua')
 dofile('tests/policy_integration.lua')
+
+dofile('tests/qualified_policy.lua')

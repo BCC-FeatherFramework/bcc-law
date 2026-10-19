@@ -6,6 +6,8 @@ local root='../../[feather]/feather-admin/'
 for _,path in ipairs({'configs/permissions.lua','configs/authority_actions.lua','configs/service_policy.lua','configs/law_acceptance_policy.lua'}) do
     assert(loadfile(root..path,'t',env))()
 end
+check('installed policy uses qualified on-duty actors',env.Config.lawAcceptancePolicy.mode=='qualified')
+env.Config.lawAcceptancePolicy.mode='staff' -- regression coverage for explicit staging mode
 local catalog=0;for _ in pairs(env.Config.authorityActions) do catalog=catalog+1 end
 check('reviewed Admin catalog stays at 90 capabilities',catalog==90)
 check('Justice actions not appended to Admin capability definitions',env.Config.permissions['justice.case.open']==nil and env.Config.authorityActions['justice.case.open']==nil)
@@ -35,7 +37,11 @@ for action in pairs(env.Config.lawAcceptancePolicy.actions) do
     actions=actions+1
     check('explicit staging action permitted to current owner: '..action,evaluate(action,context).value.allowed)
 end
-check('staging action list bounded and explicit',actions==23)
+local justiceAdditions=0
+for _,action in ipairs({'justice.charge.amend','justice.ruling.record','justice.ruling.view','justice.sentence.impose','justice.sentence.activate','justice.sentence.modify','justice.sentence.effect','justice.sentence.progress','justice.sentence.view','justice.evidence.link','justice.evidence.dispose','justice.evidence.view','justice.record.seal','justice.record.expunge','justice.case.view_sealed','justice.audit.view','justice.status.view'}) do
+    if env.Config.lawAcceptancePolicy.actions[action]==true then justiceAdditions=justiceAdditions+1 end
+end
+check('staging action list bounded by reviewed LAW_INTEGRATION agreement',actions==27+justiceAdditions)
 owner=false
 check('ordinary player denied even for recognized Justice action',evaluate('justice.case.view',context).value.code=='forbidden')
 owner=true

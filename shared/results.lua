@@ -7,7 +7,7 @@ function Law.Uuid(value)
 end
 function Law.Text(value, maximum)
     return type(value) == 'string' and #value > 0 and #value <= maximum
-        and value:find('[%c]') == nil
+        and value:find('%z') == nil and value:find('[\1-\8\11\12\14-\31\127]') == nil
 end
 function Law.Token(value, maximum)
     return type(value) == 'string' and #value > 0 and #value <= maximum

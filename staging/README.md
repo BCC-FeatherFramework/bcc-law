@@ -103,7 +103,7 @@ custody actions. Confirmation also requires `justice.warrant.serve`.
 No additional reader or writer privilege in Character is necessary.
 
 1. Console: `JusticeContractSmokeTest` (custody=1), `LawReleaseContractSmokeTest`
-   (routes=30/30). They are read-only diagnostics, not gameplay acceptance.
+   (routes=44/44). They are read-only diagnostics, not gameplay acceptance.
 2. Use two actual logged-in characters. Create/issue a staging arrest warrant
    for the subject UUID. Grant the officer the normal assignment/commission and
    case eligibility. Bring both to the configured `valentine` facility through
@@ -135,3 +135,44 @@ cleanup. Finance and physical custody require their explicit modes; resume is
 read-only and cleanup is retryable. See [full command reference](../docs/ACCEPTANCE_TESTS.md).
 These commands exercise real APIs when you invoke them; the offline runner alone
 still does not demonstrate live database, financial or two-player acceptance.
+
+
+## Alpha.6 physical restraints
+
+Use two live staging characters. The officer needs the existing job/commission,
+case access, and the explicit `law.restraint.manage` action (recognized by the
+installed owner-only Admin staging adapter). Issue a fresh arrest warrant for
+the subject through Justice. A served/expired/recalled warrant cannot apply cuffs.
+
+1. Within 3 units in the same bucket, use MDT `Teren` or
+   `/lawcuff new_hanover <subject source> <warrant UUID>`. Check only that subject
+   becomes restrained. A duplicate apply must not toggle or extend the timeout.
+2. `/lawescort new_hanover <subject source> on`, then `off`; repeat each command.
+   Check movement/attachment, missing streamed officer, mounted players and
+   distance beyond 6 units. Escort stops; cuffs remain until explicitly released
+   or the server sweep's cleanup conditions occur.
+3. `/lawuncuff new_hanover <subject source>`, repeat; verify idempotent release.
+   Try self, distant/dead/cross-instance targets, wrong warrant subject, inactive
+   warrant, missing duty/commission/policy and another department.
+4. Recall the warrant, leave duty, die, disconnect/reconnect, reuse a source or
+   stop a dependency. Verify physical state clears and no old session inherits it.
+   Interrupt replies: client native state clears after at most its five-second
+   snapshot lease. Confirm resource stop removes cuffs and attachment immediately.
+5. Verify no legal custody/warrant/sentence record changed as a side effect of
+   physical cleanup. Booking confirmation serves the warrant; subsequent physical
+   cleanup must not be mistaken for legal release or timed jail completion.
+
+These steps have not been run in RedM by this implementation. The offline suite
+uses mocked physics and does not demonstrate multiplayer native behavior.
+
+
+## Alpha.8 evidence
+
+The module does not create live lockers until explicitly requested. Follow
+[Evidence setup and acceptance](../docs/EVIDENCE.md): review server-only locker
+config, await Inventory/Justice evidence readiness, then console
+`LawSetupEvidenceLockers` on disposable staging. Use two real current characters
+and an active seizure warrant. Validate transfer/receipt/link as separate facts,
+including an interrupted reply and a failed link after committed collection.
+Disposition controls record legal decisions only; no physical return or destruction
+is implemented. These live steps were not executed during the code changes.
