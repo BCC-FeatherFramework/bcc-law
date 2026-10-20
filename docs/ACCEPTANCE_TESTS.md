@@ -17,8 +17,8 @@ Expected: `PASS bcc-law: … 0 failed`, plus the client and MDT browser PASS lin
 
 ## 2. Live console (server running, players may be offline)
 
-After `refresh` and a restart of feather-justice and bcc-law (and feather-admin and
-feather-inventory, whose configuration/code changed):
+After `refresh` and a restart of feather-admin, feather-inventory and bcc-law (their
+configuration or code changed; feather-justice is unchanged):
 
 ```text
 LawSetupJurisdictions        -> department=new_hanover result=<uuid> (or already_registered)

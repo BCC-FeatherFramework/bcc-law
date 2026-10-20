@@ -52,7 +52,8 @@ equals the value recorded on the live server
 
 ## Live steps
 
-`refresh`; restart feather-admin, feather-inventory, feather-justice and bcc-law;
+`refresh`; restart feather-admin, feather-inventory and bcc-law (feather-justice is
+unchanged; it re-registers its evidence guard by itself after Inventory restarts);
 then `LawSetupJurisdictions`, `LawSetupStatutes`, `LawSetupEvidenceLockers`,
 `LawReleaseContractSmokeTest`, `LawAcceptanceTest <officerUUID> <subjectUUID>`.
 Migrations v2 and v3 apply at the first start.
