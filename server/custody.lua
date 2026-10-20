@@ -1,4 +1,9 @@
+-- Arrest, booking and release (Justice master plan: "BCC Law identifies active
+-- warrant or lawful exception → Justice records arrest/custody authority → BCC Law
+-- performs restraint and transport → booking → Justice records release").
+local maximumRevision=9007199254740989
 local function Number(v,min,max) return type(v)=='number' and v==v and v>=min and v<=max end
+local function Integer(v,min,max) return type(v)=='number' and v%1==0 and v>=min and v<=max end
 function Law.ValidateCustodyConfig()
     local c=LawConfig.Custody
     if type(c)~='table' or not Number(c.InteractionDistance,0.5,10) or type(c.Facilities)~='table' then return false end
@@ -12,19 +17,6 @@ function Law.ValidateCustodyConfig()
     end
     return count<=32
 end
-local function Payload(p,fields,mutation)
-    local allowed={department=true};for _,key in ipairs(fields) do allowed[key]=true end
-    if mutation then allowed.requestId=true end
-    return Law.Fields(p,allowed) and Law.Token(p.department,48) and (not mutation or Law.Token(p.requestId,64))
-end
-local function CaseAccess(p,source,context,action)
-    local actor=Law.Access(source,context,p.department,action);if not actor.ok then return actor end
-    local case=Law.Call('feather-justice','GetCase',{actorSource=source,recordId=p.caseId})
-    if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed.') end
-    if not case.ok then return case end
-    if case.value.jurisdictionId~=actor.value.jurisdictionId then return Law.Err('not_found','Case unavailable.') end
-    return actor
-end
 local function Target(characterId)
     for _,player in ipairs(GetPlayers()) do
         local source=tonumber(player)
@@ -37,6 +29,7 @@ local function Target(characterId)
     end
     return Law.Err('subject_offline','Subject must have a current character session.')
 end
+Law.SessionForCharacter=Target
 local function Coordinates(source)
     local ped=GetPlayerPed(source)
     if not ped or ped==0 then return nil end
@@ -45,6 +38,7 @@ local function Coordinates(source)
     return p
 end
 local function Distance(a,b) return (a.x-b.x)^2+(a.y-b.y)^2+(a.z-b.z)^2 end
+-- Officer and subject together at the department's configured booking facility.
 local function Presence(actor,subjectId,facilityKey,department)
     local f=LawConfig.Custody.Facilities[facilityKey or '']
     if not f or f.department~=department then return Law.Err('facility_unavailable','Booking facility is not configured for this department.') end
@@ -62,17 +56,9 @@ local function Presence(actor,subjectId,facilityKey,department)
     return target
 end
 Law.BookingPresence=Presence
-local function Mutation(p,actor,reason)
-    return {actorSource=actor.source,requestId=actor.characterId..':'..p.requestId,reasonCode=reason,caseId=p.caseId}
-end
-local function Dispatch(actor,target,operation,request)
-    if not Law.Current(actor) or (target and not Law.Current(target)) then return Law.Err('session_expired','Character changed.') end
-    local result=Law.Call('feather-justice',operation,request)
-    if not Law.Current(actor) or (target and not Law.Current(target)) then return Law.Err('session_expired','Character changed; reuse the original request ID.') end
-    return result
-end
+
 Law.Routes['law.custody.facilities.v1']={
-    validate=function(p) return Payload(p,{},false) end,
+    validate=function(p) return Law.RoutePayload(p,{},false) end,
     handler=function(p,source,context)
         local actor=Law.Access(source,context,p.department,'justice.custody.view');if not actor.ok then return actor end
         local items={};for key,f in pairs(LawConfig.Custody.Facilities) do if f.department==p.department then items[#items+1]={key=key,label=f.label} end end
@@ -80,57 +66,70 @@ Law.Routes['law.custody.facilities.v1']={
     end
 }
 Law.Routes['law.custody.list.v1']={
-    validate=function(p) return Payload(p,{'caseId','cursor'},false) and Law.Uuid(p.caseId) and (p.cursor==nil or Law.Uuid(p.cursor)) end,
+    validate=function(p) return Law.RoutePayload(p,{'caseId'},false) and Law.Uuid(p.caseId) end,
     handler=function(p,source,context)
-        local actor=CaseAccess(p,source,context,'justice.custody.view');if not actor.ok then return actor end
-        return Dispatch(actor.value,nil,'ListCaseCustody',{actorSource=source,caseId=p.caseId,cursor=p.cursor,limit=25})
+        local actor=Law.CaseAccess(p,source,context,'justice.custody.view',true);if not actor.ok then return actor end
+        local related=actor.value.case.related
+        return Law.Ok(type(related)=='table' and related.custody or {items={},truncated=false})
     end
 }
-Law.Routes['law.custody.reserve.v1']={
-    validate=function(p) return Payload(p,{'caseId','warrantId','expectedWarrantRevision','facilityKey'},true) and Law.Uuid(p.caseId)
-        and Law.Uuid(p.warrantId) and Number(p.expectedWarrantRevision,1,9007199254740989) and p.expectedWarrantRevision%1==0 and Law.Token(p.facilityKey,64) end,
+-- Arrest: the subject must already be restrained (by any qualified officer) and
+-- nearby; the authority must name exactly that character in this case.
+Law.Routes['law.custody.arrest.v1']={mutation=true,
+    validate=function(p) return Law.RoutePayload(p,{'caseId','targetSource','authorityType','authorityId','expectedAuthorityRevision'},true)
+        and Law.Uuid(p.caseId) and Integer(p.targetSource,1,65535) and (p.authorityType=='warrant' or p.authorityType=='judicial_order')
+        and Law.Uuid(p.authorityId) and Integer(p.expectedAuthorityRevision,1,maximumRevision) end,
     handler=function(p,source,context)
-        local actor=CaseAccess(p,source,context,'justice.custody.book');if not actor.ok then return actor end
-        local warrant=Law.Call('feather-justice','GetWarrant',{actorSource=source,recordId=p.warrantId})
-        if not warrant.ok then return warrant end
-        if warrant.value.caseId~=p.caseId or warrant.value.jurisdictionId~=actor.value.jurisdictionId or not Law.Uuid(warrant.value.subjectCharacterId) then return Law.Err('not_found','Warrant unavailable.') end
-        local target=Presence(actor.value,warrant.value.subjectCharacterId,p.facilityKey,p.department);if not target.ok then return target end
-        local request=Mutation(p,actor.value,'law.custody.reserve')
-        request.warrantId,request.expectedWarrantRevision,request.facilityKey=p.warrantId,p.expectedWarrantRevision,p.facilityKey
-        return Dispatch(actor.value,target.value,'ReserveCustodyBooking',request)
-    end
-}
-for _,spec in ipairs({{route='confirm',operation='ConfirmCustodyBooking',action='justice.custody.book'},
-    {route='release',operation='ReleaseCustody',action='justice.custody.release'}}) do
-    Law.Routes['law.custody.'..spec.route..'.v1']={
-        validate=function(p) return Payload(p,{'caseId','recordId','expectedRevision'},true) and Law.Uuid(p.caseId)
-            and Law.Uuid(p.recordId) and Number(p.expectedRevision,1,9007199254740989) and p.expectedRevision%1==0 end,
-        handler=function(p,source,context)
-            local actor=CaseAccess(p,source,context,spec.action);if not actor.ok then return actor end
-            local record=Law.Call('feather-justice','GetCustody',{actorSource=source,recordId=p.recordId})
-            if not record.ok then return record end
-            if record.value.caseId~=p.caseId or record.value.jurisdictionId~=actor.value.jurisdictionId then return Law.Err('not_found','Custody unavailable.') end
-            local target
-            if spec.route=='confirm' then
-                local presence=Presence(actor.value,record.value.subjectCharacterId,record.value.document.facilityKey,p.department)
-                if not presence.ok then return presence end;target=presence.value
-            end
-            local request=Mutation(p,actor.value,'law.custody.'..spec.route)
-            request.recordId,request.expectedRevision=p.recordId,p.expectedRevision
-            return Dispatch(actor.value,target,spec.operation,request)
+        local actor=Law.CaseAccess(p,source,context,'justice.custody.record');if not actor.ok then return actor end
+        local target=Law.RestrainedTarget(actor.value,p.targetSource,p.department);if not target.ok then return target end
+        local subjectId
+        if p.authorityType=='warrant' then
+            local warrant=Law.Dispatch(actor.value,'GetWarrant',{actorSource=source,warrantId=p.authorityId})
+            if not warrant.ok then return warrant end
+            local w=warrant.value
+            if w.caseId~=p.caseId or w.warrantType~='arrest' or w.status~='active' then return Law.Err('arrest_authority_required','An active arrest warrant of this case is required.') end
+            subjectId=w.subjectCharacterId
+        else
+            local sentence=Law.Dispatch(actor.value,'GetSentence',{actorSource=source,sentenceId=p.authorityId})
+            if not sentence.ok then return sentence end
+            local s=sentence.value
+            if s.caseId~=p.caseId or s.sentenceType~='custodial' or s.status~='active' then return Law.Err('arrest_authority_required','An active custodial sentence of this case is required.') end
+            subjectId=s.defendantCharacterId
         end
-    }
-end
-
--- Historical recovery must not require the target to remain online/nearby.
-Law.Routes['law.operations.get.v1']={
-    validate=function(p) return Payload(p,{'requestId'},false) and Law.Token(p.requestId,64) end,
-    handler=function(p,source,context)
-        local actor=Law.Access(source,context,p.department,'justice.case.view');if not actor.ok then return actor end
-        local result=Law.Call('feather-justice','FindOperation',{actorSource=source,requestId=actor.value.characterId..':'..p.requestId})
-        if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed.') end
-        if not result.ok then return result end
-        if result.value.jurisdictionId~=actor.value.jurisdictionId then return Law.Err('not_found','Operation unavailable.') end
+        if type(subjectId)~='string' or subjectId:lower()~=target.value.characterId:lower() then
+            return Law.Err('arrest_authority_required','The authority names a different person.')
+        end
+        local request=Law.Mutation(p,actor.value,'law.custody.arrest')
+        request.caseId,request.authorityType,request.authorityId,request.expectedAuthorityRevision=p.caseId,p.authorityType,p.authorityId,p.expectedAuthorityRevision
+        local result=Law.Dispatch(actor.value,'RecordArrest',request)
+        -- From now on the custody record, not the (served) warrant, authorizes the restraint.
+        if result.ok and type(result.value)=='table' then Law.SetRestraintCustody(p.targetSource,result.value.custodyId) end
         return result
+    end
+}
+Law.Routes['law.custody.book.v1']={mutation=true,
+    validate=function(p) return Law.RoutePayload(p,{'caseId','custodyId','expectedRevision','facilityKey'},true) and Law.Uuid(p.caseId)
+        and Law.Uuid(p.custodyId) and Integer(p.expectedRevision,1,maximumRevision) and Law.Token(p.facilityKey,64) end,
+    handler=function(p,source,context)
+        local actor=Law.CaseAccess(p,source,context,'justice.custody.record');if not actor.ok then return actor end
+        local record=Law.Dispatch(actor.value,'GetCustodyStatus',{actorSource=source,custodyId=p.custodyId})
+        if not record.ok then return record end
+        if record.value.caseId~=p.caseId then return Law.Err('not_found','Custody unavailable in this case.') end
+        local target=Presence(actor.value,record.value.subjectCharacterId,p.facilityKey,p.department);if not target.ok then return target end
+        local request=Law.Mutation(p,actor.value,'law.custody.book')
+        request.custodyId,request.expectedRevision,request.facilityKey=p.custodyId,p.expectedRevision,p.facilityKey
+        local result=Law.Dispatch(actor.value,'BookCustody',request)
+        if result.ok then pcall(Law.LockFacility,p.facilityKey) end
+        return result
+    end
+}
+Law.Routes['law.custody.release.v1']={mutation=true,
+    validate=function(p) return Law.RoutePayload(p,{'caseId','custodyId','expectedRevision','releaseReason'},true) and Law.Uuid(p.caseId)
+        and Law.Uuid(p.custodyId) and Integer(p.expectedRevision,1,maximumRevision) and Law.Token(p.releaseReason,64) end,
+    handler=function(p,source,context)
+        local actor=Law.CaseAccess(p,source,context,'justice.custody.release');if not actor.ok then return actor end
+        local request=Law.Mutation(p,actor.value,'law.custody.release')
+        request.custodyId,request.expectedRevision,request.releaseReason=p.custodyId,p.expectedRevision,p.releaseReason
+        return Law.Dispatch(actor.value,'ReleaseCustody',request)
     end
 }

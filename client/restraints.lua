@@ -62,23 +62,30 @@ CreateThread(function()
         end
     end
 end)
+-- /lawcuff <department> <player> <UUID> [custody]: the UUID is an arrest warrant,
+-- or with "custody" an unreleased custody record (after the arrest is recorded).
 local function Command(operation,args)
     if busy then return end
     local target=tonumber(args[2])
     if not args[1] or not target or (operation=='apply' and not args[3])
         or (operation=='escort' and args[3]~='on' and args[3]~='off') then
-        print('[bcc-law] /lawcuff <department> <player source> <arrest warrant UUID>; /lawuncuff <department> <player source>; /lawescort <department> <player source> <on|off>')
+        print(Law.T(Law.ClientLocale,'client.restraintUsage'))
         return
     end
     busy=true
     local generation=epoch
     CreateThread(function()
         local p={department=args[1],targetSource=target}
-        if operation=='apply' then p.warrantId=args[3] elseif operation=='escort' then p.enabled=args[3]=='on' end
+        if operation=='apply' then
+            if args[4]=='custody' then p.custodyId=args[3] else p.warrantId=args[3] end
+        elseif operation=='escort' then p.enabled=args[3]=='on' end
         local r=Rpc(operation,p)
         if generation~=epoch then return end
         busy=false
-        print(r.ok and '[bcc-law] Interaction confirmed.' or ('[bcc-law] '..tostring(r.code)..': '..tostring(r.message or 'Interaction unavailable.')))
+        if r.ok then print(Law.T(Law.ClientLocale,'client.confirmed'));return end
+        local key='error.'..tostring(r.code)
+        local text=Law.T(Law.ClientLocale,key)
+        print(Law.T(Law.ClientLocale,'client.failed',{message=text~=key and text or Law.T(Law.ClientLocale,'error.unconfirmed')}))
     end)
 end
 RegisterCommand('lawcuff',function(_,args) Command('apply',args) end,false)

@@ -1,3 +1,4 @@
+-- Restraint client (client/restraints.lua) with mocked natives; no RedM acceptance.
 local checks,threads,events,commands,now=0,{},{},{},0
 local cuffed,firing,attached=false,false,false
 local response={ok=true,value={restrained=true,escortSource=5}}
@@ -26,7 +27,10 @@ env.IsEntityAttachedToEntity=function() return attached end
 env.AttachEntityToEntity=function() attached=true end
 env.DetachEntity=function() attached=false end
 env.exports={['feather-core']={CallRPCAsync=function() return response end}}
-env.print=function() end
+local printed={}
+env.print=function(line) printed[#printed+1]=line end
+for _,file in ipairs({'shared/results.lua','locales/en.lua','locales/ro.lua'}) do assert(loadfile(file,'t',env))() end
+env.Law.ClientLocale='ro'
 assert(loadfile('client/restraints.lua','t',env))()
 local function resume(n) local ok,err=coroutine.resume(threads[n]);assert(ok,err) end
 resume(1);resume(2)
@@ -42,4 +46,11 @@ check('dependency stop releases physical state',not cuffed and not firing)
 response={ok=false,code='not_ready'};resume(1);resume(2)
 check('rejected poll keeps client unrestrained',not cuffed)
 check('field command bindings available',commands.lawcuff and commands.lawuncuff and commands.lawescort)
+commands.lawcuff(0,{})
+check('usage is printed in the player language',printed[#printed]:find('departament',1,true)~=nil)
+local sent
+env.exports['feather-core'].CallRPCAsync=function(_,route,payload) sent={route=route,payload=payload};return {ok=false,code='restraint_conflict'} end
+commands.lawcuff(0,{'new_hanover','6','8f37d250-3b6a-4c19-8e72-000000000001','custody'});resume(#threads)
+check('custody form sends the custody record',sent.route=='law.restraints.apply.v1' and sent.payload.custodyId and sent.payload.warrantId==nil)
+check('errors are printed in the player language',printed[#printed]:find('imobilizată',1,true)~=nil)
 print(('PASS Law restraint client: %d checks (mock natives; no RedM acceptance)'):format(checks))

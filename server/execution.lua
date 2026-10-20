@@ -1,9 +1,8 @@
 local snapshots,tasks,busy,characters={},{},{},{}
 function Law.ExecutionAvailable()
-    if not Law.Ready() or Law.ExecutionStore.state~='ready' then return false end
-    local r=Law.Call('feather-justice','GetCapabilities')
-    return r.ok and type(r.value)=='table' and r.value.contract==1 and type(r.value.features)=='table'
-        and r.value.features.subjectStatus==1 and r.value.features.sentences==1 and r.value.features.sentenceProgress==1
+    if not Law.Ready() or Law.Store.state~='ready' then return false end
+    local c=Law.JusticeContract()
+    return c~=nil and c.features.custody==1 and c.features.sentences==1
 end
 local function Number(v,a,b) return type(v)=='number' and v==v and v>=a and v<=b end
 local function Point(p) return type(p)=='table' and Number(p.x,-100000,100000) and Number(p.y,-100000,100000) and Number(p.z,-10000,10000) end
@@ -53,16 +52,32 @@ local function Alive(actor)
     local p=GetEntityCoords(ped)
     return Point(p) and p or nil
 end
+-- Legal status in service mode (no officer needed): custody and the custodial
+-- term from GetCustodyStatus; community service from ListActiveSentences, with the
+-- completed units Law counts itself (time never creates units).
 local function Status(actor)
-    local result=Law.Call('feather-justice','GetSubjectLegalStatus',{subjectCharacterId=actor.characterId})
+    local custody=Law.Call('feather-justice','GetCustodyStatus',{subjectCharacterId=actor.characterId})
     if not Law.Current(actor) then return Law.Err('session_expired','Character changed.') end
-    if not result.ok then return result end
-    local v=result.value
+    if not custody.ok then return custody end
+    local v=custody.value
     if type(v)~='table' or type(v.subjectCharacterId)~='string' or v.subjectCharacterId:lower()~=actor.characterId:lower()
-        or not Number(v.serverTime,0,9007199254740990) or type(v.communityService)~='table' then
+        or not Number(v.serverTime,0,9007199254740990) then
         return Law.Err('invalid_legal_status','Justice returned no valid status.')
     end
-    return result
+    local sentences=Law.Call('feather-justice','ListActiveSentences',{defendantCharacterId=actor.characterId,sentenceType='community_service',limit=25})
+    if not Law.Current(actor) then return Law.Err('session_expired','Character changed.') end
+    if not sentences.ok then return sentences end
+    local service={}
+    for _,s in ipairs(sentences.value.items or {}) do
+        local terms=type(s.terms)=='table' and s.terms or {}
+        local progress=Law.Store.ServiceProgress(s.sentenceId)
+        service[#service+1]={sentenceId=s.sentenceId,revision=s.revision,status=s.status,units=terms.units,taskKey=terms.taskKey,
+            completedUnits=progress and progress.completed_units or 0,progressState=progress and progress.state or 'active'}
+    end
+    local custodial=v.custodialSentence
+    return Law.Ok({serverTime=v.serverTime,custody=v.custody,custodialSentence=custodial and {recordId=custodial.sentenceId,
+        revision=custodial.revision,status=custodial.status,endsAt=custodial.endsAt,facilityKey=custodial.facilityKey} or nil,
+        communityService=service})
 end
 local function Teleport(actor,p,expectedSentenceId)
     if not Law.Current(actor) or not Alive(actor) then return false end
@@ -81,8 +96,8 @@ local function ServiceTask(actor,status,position)
     local task=tasks[actor.source];if not task then return nil end
     if not Same(task.actor,actor) then tasks[actor.source]=nil;return nil end
     local sentence
-    for _,s in ipairs(status.communityService) do if s.recordId==task.sentenceId then sentence=s end end
-    if not sentence or sentence.status~='active' or sentence.revision~=task.revision or sentence.completedUnits~=task.completedUnits then
+    for _,s in ipairs(status.communityService) do if s.sentenceId==task.sentenceId then sentence=s end end
+    if not sentence or sentence.status~='active' or sentence.progressState~='active' or sentence.completedUnits~=task.completedUnits then
         tasks[actor.source]=nil;return nil
     end
     local cfg=LawConfig.Execution.Tasks[sentence.taskKey]
@@ -92,9 +107,9 @@ local function ServiceTask(actor,status,position)
     if elapsed<0 or elapsed>5000 then tasks[actor.source]=nil;return nil end
     task.elapsed=task.elapsed+elapsed;task.lastAt=now
     if task.elapsed>=cfg.seconds*1000 then
-        Law.ExecutionStore.Queue(actor.characterId,sentence)
+        local state=Law.Store.CompleteUnit(actor.characterId,sentence.sentenceId,sentence.units,sentence.completedUnits+1)
         tasks[actor.source]=nil
-        return {state='delivery_pending'}
+        return {state=state=='completing' and 'delivery_pending' or 'unit_confirmed'}
     end
     return {state='working',label=cfg.label,remainingMs=cfg.seconds*1000-task.elapsed}
 end
@@ -116,7 +131,7 @@ function Law.RefreshExecution(source)
             snapshots[source]=nil;tasks[source]=nil;return
         end
         local active=sentence and sentence.status=='active' and status.serverTime<sentence.endsAt
-        local marker=Law.ExecutionStore.Get(actor.characterId)
+        local marker=Law.Store.Get(actor.characterId)
         if not Law.Current(actor) then return end
         if active then
             local key=sentence.facilityKey or LawConfig.Execution.DefaultFacility
@@ -124,7 +139,8 @@ function Law.RefreshExecution(source)
             if not facility then snapshots[source]=nil;tasks[source]=nil;return end
             if position then
                 if not marker or marker.sentence_id~=sentence.recordId or marker.facility_key~=key then
-                    Law.ExecutionStore.Place(actor.characterId,sentence.recordId,key)
+                    Law.Store.Place(actor.characterId,sentence.recordId,key)
+                    pcall(Law.LockFacility,key)
                 end
                 if Distance(position,facility.entrance)>facility.radius^2 then Teleport(actor,facility.entrance,sentence.recordId) end
             end
@@ -132,7 +148,7 @@ function Law.RefreshExecution(source)
             local facility=LawConfig.Execution.Facilities[marker.facility_key]
             if facility then
                 if Distance(position,facility.entrance)<=facility.radius^2 then Teleport(actor,facility.exit)
-                elseif Law.Current(actor) then Law.ExecutionStore.Clear(actor.characterId) end
+                elseif Law.Current(actor) then Law.Store.Clear(actor.characterId) end
             end
         end
         if not Law.Current(actor) then return end
@@ -141,8 +157,9 @@ function Law.RefreshExecution(source)
         for _,s in ipairs(status.communityService) do
             if s.status=='active' then
                 local cfg=LawConfig.Execution.Tasks[s.taskKey]
-                safe.communityService[#safe.communityService+1]={recordId=s.recordId,units=s.units,completedUnits=s.completedUnits,
-                    taskKey=s.taskKey,label=cfg and cfg.label or s.taskKey,available=cfg~=nil,x=cfg and cfg.x,y=cfg and cfg.y,z=cfg and cfg.z}
+                safe.communityService[#safe.communityService+1]={sentenceId=s.sentenceId,units=s.units,completedUnits=s.completedUnits,
+                    taskKey=s.taskKey,label=cfg and cfg.label or s.taskKey,available=cfg~=nil and s.progressState=='active',
+                    completing=s.progressState~='active',x=cfg and cfg.x,y=cfg and cfg.y,z=cfg and cfg.z}
             end
         end
         safe.task=ServiceTask(actor,status,position)
@@ -153,19 +170,21 @@ function Law.RefreshExecution(source)
     if not ok then snapshots[source]=nil;tasks[source]=nil;return Law.Err('execution_unavailable','Physical execution could not be confirmed.') end
     return err
 end
-function Law.DeliverServiceProgress()
-    for _,row in ipairs(Law.ExecutionStore.Pending()) do
-        local r=Law.Call('feather-justice','RecordSentenceProgress',{recordId=row.sentence_id,expectedRevision=tonumber(row.expected_revision),
-            completedUnits=tonumber(row.completed_units),requestId=row.request_id,reasonCode='law.service.task_completed'})
-        if r.ok then Law.ExecutionStore.Mark(row.request_id,'confirmed',nil)
-        elseif r.code=='revision_conflict' or r.code=='progress_not_increasing' or r.code=='invalid_transition' then
-            -- Do not change the original intent/revision; reconcile cumulative facts.
-            local status=Law.Call('feather-justice','GetSubjectLegalStatus',{subjectCharacterId=row.character_id})
-            local satisfied=false
-            if status.ok then for _,s in ipairs(status.value.communityService or {}) do
-                if s.recordId==row.sentence_id and s.completedUnits>=tonumber(row.completed_units) then satisfied=true end
-            end end
-            Law.ExecutionStore.Mark(row.request_id,satisfied and 'superseded' or 'review_required',r.code)
+-- The last confirmed unit completes the sentence in Justice (service mode). The
+-- request ID is stable per sentence, so retries replay instead of duplicating.
+function Law.DeliverServiceCompletion()
+    for _,row in ipairs(Law.Store.ServiceCompleting(25)) do
+        local sentence=Law.Call('feather-justice','ListActiveSentences',{defendantCharacterId=row.character_id,sentenceType='community_service',limit=25})
+        local current
+        if sentence.ok then for _,s in ipairs(sentence.value.items or {}) do if s.sentenceId==row.sentence_id then current=s end end end
+        if sentence.ok and not current then
+            Law.Store.ServiceMark(row.sentence_id,'completed','no_longer_active')
+        elseif current then
+            local r=Law.Call('feather-justice','CompleteSentence',{sentenceId=row.sentence_id,expectedRevision=current.revision,
+                outcome='served',requestId='law:service:complete:'..row.sentence_id,reasonCode='law.service.units_completed'})
+            if r.ok then Law.Store.ServiceMark(row.sentence_id,'completed',nil)
+            elseif r.code=='invalid_transition' then Law.Store.ServiceMark(row.sentence_id,'completed',r.code)
+            elseif r.code~='revision_conflict' then Law.Store.ServiceMark(row.sentence_id,'completing',r.code) end
         end
     end
 end
@@ -184,19 +203,19 @@ Law.Routes['law.execution.self.v1']={
 Law.Routes['law.service.start.v1']={
     validate=function(p) return Law.Fields(p,{sentenceId=true}) and Law.Uuid(p.sentenceId) end,
     handler=function(p,source,context)
-        if Law.ExecutionStore.state~='ready' then return Law.Err('not_ready','Execution storage unavailable.') end
+        if Law.Store.state~='ready' then return Law.Err('not_ready','Execution storage unavailable.') end
         local a=Law.Actor(source,context);if not a.ok then return a end
         local spawned=Law.ExecutionActor(source)
         if not spawned.ok or not Same(a.value,spawned.value) then return Law.Err('not_spawned','Character spawn is not complete.') end
         local status=Status(a.value);if not status.ok then return status end
         local position=Alive(a.value);if not position then return Law.Err('interaction_unavailable','Live character required.') end
         for _,s in ipairs(status.value.communityService) do
-            if s.recordId==p.sentenceId and s.status=='active' then
-                if Law.ExecutionStore.HasOutstanding(a.value.characterId,s.recordId) then return Law.Err('progress_pending','Previous task delivery needs confirmation or review.') end
+            if s.sentenceId==p.sentenceId and s.status=='active' then
+                if s.progressState~='active' then return Law.Err('progress_pending','All units are done; completion is being confirmed.') end
                 local cfg=LawConfig.Execution.Tasks[s.taskKey]
                 if not cfg or Distance(position,cfg)>cfg.radius^2 then return Law.Err('proximity_required','Go to the configured work site.') end
                 if not Law.Current(a.value) then return Law.Err('session_expired','Character changed.') end
-                tasks[source]={actor=a.value,sentenceId=s.recordId,revision=s.revision,completedUnits=s.completedUnits,lastAt=GetGameTimer(),elapsed=0}
+                tasks[source]={actor=a.value,sentenceId=s.sentenceId,revision=s.revision,completedUnits=s.completedUnits,lastAt=GetGameTimer(),elapsed=0}
                 return Law.Ok({started=true,label=cfg.label,seconds=cfg.seconds})
             end
         end
@@ -216,7 +235,7 @@ CreateThread(function()
                 local target=tonumber(source)
                 CreateThread(function() Law.RefreshExecution(target) end)
             end
-            pcall(Law.DeliverServiceProgress)
+            pcall(Law.DeliverServiceCompletion)
         end
         Wait(2000)
     end

@@ -50,16 +50,33 @@ end
 local function Authorized(actor,department,action)
     return Law.Access(actor.source,{characterId=actor.characterId,sessionId=actor.sessionId},department,action)
 end
-local function Warrant(actor,target,id)
-    local r=Law.Call('feather-justice','GetWarrant',{actorSource=actor.source,recordId=id})
+-- Legal basis of a restraint: an active arrest warrant, or (after RecordArrest) the
+-- subject's unreleased custody record. Both must name exactly this character.
+local function Authority(actor,target,authority)
+    if authority.kind=='custody' then
+        local r=Law.Call('feather-justice','GetCustodyStatus',{actorSource=actor.source,custodyId=authority.id})
+        if not r.ok then return r end
+        local c=r.value
+        if type(c)~='table' or c.status=='released' or c.jurisdictionId~=actor.jurisdictionId
+            or type(c.subjectCharacterId)~='string' or c.subjectCharacterId:lower()~=target.characterId:lower() then
+            return Law.Err('custody_authority_required','Unreleased custody of this subject is required.')
+        end
+        return Law.Ok(c)
+    end
+    local r=Law.Call('feather-justice','GetWarrant',{actorSource=actor.source,warrantId=authority.id})
     if not r.ok then return r end
     local w=r.value
     if type(w)~='table' or w.status~='active' or w.jurisdictionId~=actor.jurisdictionId
         or type(w.subjectCharacterId)~='string' or w.subjectCharacterId:lower()~=target.characterId:lower()
-        or type(w.document)~='table' or w.document.warrantType~='arrest' then
+        or w.warrantType~='arrest' then
         return Law.Err('arrest_authority_required','An active arrest warrant for this subject is required.')
     end
     return Law.Ok(w)
+end
+-- Called after Justice recorded the arrest: the custody record becomes the basis.
+function Law.SetRestraintCustody(targetSource,custodyId)
+    local r=held[targetSource]
+    if r and Law.Uuid(custodyId) then r.authority={kind='custody',id=custodyId} end
 end
 local function Payload(p,fields)
     local allowed={department=true,targetSource=true};for _,field in ipairs(fields) do allowed[field]=true end
@@ -86,7 +103,8 @@ Law.Routes['law.restraints.self.v1']={
     end
 }
 Law.Routes['law.restraints.apply.v1']={
-    validate=function(p) return Payload(p,{'warrantId'}) and Law.Uuid(p.warrantId) end,
+    validate=function(p) return Payload(p,{'warrantId','custodyId'}) and (p.warrantId==nil)~=(p.custodyId==nil)
+        and (p.warrantId==nil or Law.Uuid(p.warrantId)) and (p.custodyId==nil or Law.Uuid(p.custodyId)) end,
     handler=function(p,source,context)
         return Locked(p.targetSource,function()
             local actor=Law.Access(source,context,p.department,'law.restraint.manage');if not actor.ok then return actor end
@@ -94,17 +112,18 @@ Law.Routes['law.restraints.apply.v1']={
             if not Nearby(actor.value,target.value,LawConfig.Restraints.InteractionDistance) then
                 return Law.Err('proximity_required','Both players must be alive and nearby in the same instance.')
             end
-            local warrant=Warrant(actor.value,target.value,p.warrantId);if not warrant.ok then return warrant end
+            local authority=p.warrantId and {kind='warrant',id=p.warrantId} or {kind='custody',id=p.custodyId}
+            local legal=Authority(actor.value,target.value,authority);if not legal.ok then return legal end
             -- Provider calls may yield: recheck both sessions and physical presence at commit.
             if not Nearby(actor.value,target.value,LawConfig.Restraints.InteractionDistance) then return Law.Err('session_expired','Interaction changed.') end
             local previous=held[p.targetSource]
             if previous and Same(previous.target,target.value) then
-                if not Same(previous.officer,actor.value) or previous.warrantId~=p.warrantId then
+                if not Same(previous.officer,actor.value) or previous.authority.id~=authority.id then
                     return Law.Err('restraint_conflict','Subject is already restrained by another interaction.')
                 end
                 return Law.Ok(Snapshot(previous)) -- retry never extends the timeout
             end
-            local r={target=target.value,officer=actor.value,department=p.department,warrantId=p.warrantId,
+            local r={target=target.value,officer=actor.value,department=p.department,authority=authority,
                 startedAt=GetGameTimer(),escort=false}
             held[p.targetSource]=r
             return Law.Ok(Snapshot(r))
@@ -128,7 +147,7 @@ for _,operation in ipairs({'release','escort'}) do
                 if operation=='release' then held[p.targetSource]=nil;return Law.Ok({restrained=false}) end
                 if not Same(r.officer,actor.value) then return Law.Err('restraint_conflict','Only the restraining officer can escort this subject.') end
                 if p.enabled then
-                    local warrant=Warrant(actor.value,target.value,r.warrantId);if not warrant.ok then return warrant end
+                    local legal=Authority(actor.value,target.value,r.authority);if not legal.ok then return legal end
                 end
                 if held[p.targetSource]~=r or not Nearby(actor.value,target.value,LawConfig.Restraints.InteractionDistance) then return Law.Err('session_expired','Interaction changed.') end
                 r.escort=p.enabled
@@ -144,7 +163,7 @@ function Law.SweepRestraints()
             and GetGameTimer()-r.startedAt<LawConfig.Restraints.MaxSeconds*1000
         if valid then
             local officer=Authorized(r.officer,r.department,'law.restraint.manage')
-            valid=officer.ok and Warrant(officer.value,r.target,r.warrantId).ok
+            valid=officer.ok and Authority(officer.value,r.target,r.authority).ok
                 and Law.Current(r.target) and Law.Current(r.officer)
         end
         if held[source]==r then

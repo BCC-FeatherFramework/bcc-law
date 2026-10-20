@@ -1,130 +1,80 @@
-# Evidence collection and recovery — alpha.8
+# Evidence: collection, links and dispositions (beta.1)
 
-Implements the `LAW_INTEGRATION.md` split: Inventory owns physical instances,
-private lockers and transfer receipts; Justice owns evidence links and legal
-dispositions; Law owns authorization, interaction and the MDT.
+Split of ownership ([Justice integration agreement](../../../[feather]/feather-justice/LAW_INTEGRATION.md)):
+Inventory owns the item instances, the private lockers and the transfer and
+disposition receipts; Justice owns the evidence links, the destroy guard and the
+legal dispositions; Law owns the authority checks, the interaction and the MDT.
 
 ## Setup
 
-Inventory must include `server/services/law_evidence.lua`. After its ordinary
-readiness, that module creates its two additive Inventory-owned tables:
-`inventory_law_evidence_lockers` and `inventory_law_evidence_receipts`.
-Failure leaves evidence operations unavailable. It never runs against the live
-server merely because these files were edited.
-
-Configure `LawConfig.Evidence.Lockers` server-side. The proposed Valentine locker
-uses the existing booking coordinates; review the actual location for your map.
-Limits are 1000 instances / 10000 weight by default. `maxItems` is also the slot
-limit, with a hard config bound of 10000. Existing persisted limits cannot be
-silently changed by rerunning setup.
-
-Read-only console `LawEvidenceStatus` reports dependency/guard readiness and the
-configured locker count; it does not certify setup or live acceptance.
-
-On disposable staging, explicitly run console `LawSetupEvidenceLockers` once
-after Law and Inventory are ready. It creates/reuses a private `law_evidence`
-inventory for each configured locker. This command **writes storage**, is never
-called on startup, and cannot be invoked by a player. No player ACL or public
-inventory flag is granted.
-
-The current officer needs duty, commission, case eligibility and the reviewed
-`justice.evidence.view/link/dispose` policy actions from Claude's agreement.
-Justice's `evidenceLinks` and active `evidenceGuard` must both be available for
-new collection/linking. Shared Admin grants remain Claude's responsibility.
+Inventory's `server/services/law_evidence.lua` creates its tables after Inventory
+is ready: `inventory_law_evidence_lockers`, `inventory_law_evidence_receipts` and
+`inventory_law_evidence_dispositions`. Configure `LawConfig.Evidence.Lockers`
+(the default Valentine locker uses the booking coordinates; review it for your
+map; `maxItems` is also the slot limit). Then run the console command
+`LawSetupEvidenceLockers` once: it creates or reuses one private `law_evidence`
+inventory per locker. It never runs on startup and grants no player access.
+`LawEvidenceStatus` shows readiness, the Justice guard, the lockers and any
+pending or failed physical step.
 
 ## Collection
 
-Open a case → `Probe` → `Colectează de la persoană`.
+Case → Evidence → Collect from a person.
 
-1. Create and issue a **seizure** warrant for that case and subject. Arrest/search
-   warrants do not substitute for seizure authority. The MDT warrant form now
-   supports all three types through separate typed routes.
-2. Restrain the live subject and bring both players to the configured locker.
-   Submit the item ID and current revision from inspection, the seizure warrant,
-   locker and description. Clients cannot submit actor/subject UUIDs, inventory
-   IDs, arbitrary destinations, quantities or metadata.
-3. Inventory validates Law authority and target sessions before and after its
-   guarded move, under receipt/inventory/item locks. It preserves the same item
-   ID and metadata, bumps its revision, checks current weight/slot capacity,
-   honors movement/Weapons guards and records the receipt in the same transaction.
-   A weapon instance requires the started Weapons owner and its registered movement
-   guard. An equipped/protected weapon may need authoritative unequip first; Law does
-   not bypass a Weapons guard or grant a native weapon.
-4. Law links the confirmed receipt through Justice `LinkEvidence`, with the
-   original subject UUID, decimal instance reference and a stable `:link` intent.
-   Collection is not a cross-resource atomic transaction. A failed link leaves
-   a confirmed transfer pending; it never moves the item again or reports full
-   success. Finish execution of the seizure warrant through its existing
-   `Execută` control after the intended collection is complete.
+1. A judge issues a **seizure** warrant for the person in this case (an arrest or
+   search warrant is not seizure authority).
+2. The person is restrained and both stand at the locker. The officer enters the
+   item id and revision (from the search result), the warrant, the locker and a
+   description. The client cannot choose actors, inventories, quantities or metadata.
+3. Inventory checks Law's authority before and after the move, under locks, keeps
+   the item identity and metadata, checks capacity and the Weapons guard, and
+   stores the receipt in the same transaction.
+4. Law links the receipt in Justice (`LinkEvidence`, decimal instance id, the
+   original subject). While linked, Justice's destroy guard vetoes destroying the item.
 
-Collection currently happens at the locker, rather than first putting evidence
-in the officer's pocket. The target and officer must be alive, restrained/nearby
-as appropriate, in the same routing bucket, and within the configured radius.
+Collection and linking are two resources: a failed link leaves a confirmed
+transfer pending (`evidence_link_pending`). Retry with the same request ID, or open
+"My collection receipts" and link the transfer explicitly at the current case
+revision after checking the evidence list. A receipt never moves an item twice.
 
-## Recovery and history
+## Dispositions
 
-- Retain the same `requestId` and payload after an unknown result. Inventory's
-  durable receipt is payload-bound; the transaction's memory cache is not used.
-- Exact collection replay recovers its transfer even after the target leaves,
-  is released or the resources restart. Actor duty/qualification, current session
-  and case access remain required. Changed input under the same ID is a conflict.
-- `Istoricul colectărilor mele` lists committed receipts for the current actor,
-  case and department, 25 per page. Each records original subject, instance,
-  source/destination inventories, locker, revision and creation time. These are
-  historical transfer facts, not a claim about the item's present location.
-- If the transfer succeeded but the case revision changed before linking, review
-  the legal evidence list first. Explicitly acknowledge the recovered transfer,
-  then confirm a **new link intent** against the displayed current case revision.
-  The existing receipt supplies the item/subject; no second collection occurs.
-- Justice rejects duplicate active links. A receipt cannot establish that a
-  legal link exists, or authorize another physical action. A missing/deleted
-  instance is never recreated from its receipt.
+Removing a link with a disposition is the permanent legal record (judges only):
 
-## Dispositions and limits
-
-The MDT records `returned`, `destroyed` or `forfeited` using Justice's disposition
-API and current evidence revision. This is a **legal disposition only**; the UI
-explicitly confirms that it neither moves nor deletes the item. Physical return,
-destruction, inter-locker transfer and forfeiture execution are not implemented
-or advertised (`returns=0`, `destruction=0`). Justice's guard remains responsible
-for active linked-item destruction, including links from other cases.
-
-The collection receipt is the durable initial custody record. General Inventory
-movement continues to use its existing guards and post-commit events; this slice
-does not claim a complete court-ready history of every future third-party move.
-Only the collecting character's receipts are exposed; delegation/recovery by a
-different officer requires a separately reviewed authority path.
-
-## Routes
-
-| Route | Fields besides `department` | Effect |
+| Disposition | Justice | Physical step (Inventory) |
 |---|---|---|
-| `law.evidence.lockers.v1` | none | Configured key/label list |
-| `law.evidence.collect.v1` | `caseId`, `expectedCaseRevision`, `targetSource`, `warrantId`, `itemId`, `itemRevision`, `lockerKey`, optional `description`, `requestId` | Durable Inventory move, then Justice link |
-| `law.evidence.receipts.v1` | `caseId`, optional receipt `cursor` | Current actor's transfer history |
-| `law.evidence.attach.v1` | `caseId`, `transferRequestId`, `expectedCaseRevision`, `requestId` | Explicit new link intent for a confirmed transfer |
-| `law.evidence.list.v1` | `caseId`, optional UUID `cursor` | Justice evidence page |
-| `law.evidence.disposition.v1` | `caseId`, `recordId`, `expectedRevision`, `disposition`, `requestId` | Legal disposition only |
+| `returned` | link removed with the disposition | the item goes back to the person it was seized from (`ReturnLawEvidence`) |
+| `destroyed` | link removed; the guard releases the item | the item is destroyed (`DestroyLawEvidence`) |
+| `forfeited` | link removed | none: the item stays in the locker |
+| none | link removed | none: the item stays in the locker |
 
-## Required live acceptance
+The physical step runs only after Justice confirmed the disposition. Law queues it
+durably (`bcc_law_evidence_dispositions`, request ID
+`law:evidence:<disposition>:<evidenceLinkId>`), tries it at once and then every 15
+seconds. Inventory accepts it only after calling back
+`AuthorizeEvidenceOperation('dispose')`, which matches a queued step for that
+item and disposition. Each request commits once with its receipt, so retries and
+restarts never return or destroy twice. A return checks the recipient's capacity
+and the Weapons movement guard; a destroy goes through the normal destroy guards
+(another case may still hold the item).
 
-Use a disposable database and two real characters. Verify missing setup/grants,
-wrong case/subject/type/status warrant, bucket/distance/duty/license loss, stale
-item revision, equipped weapon guards, full locker, simultaneous collections,
-rollback and disconnect during a transaction. Drop the reply after collection,
-restart and recover the exact receipt. Induce Justice revision conflict, confirm
-one physical move, recover and explicitly link. Check safe text, pagination and
-that no unrelated character can read receipts. Record a disposition and verify
-that it performs no hidden physical deletion or return.
+States, shown in the MDT as "Physical step": `pending` (retried: Inventory not
+ready, recipient inventory full, transient conflict), `done`, `failed` (needs
+staff: item no longer in a locker, unknown recipient, guard refusal). After fixing
+the cause, `LawEvidenceRetry <evidenceLinkId>` queues a failed step again with the
+same request ID.
 
-Offline suites use mocked providers and a transaction model. They do not prove
-MariaDB locking/DDL or two-player RedM behavior. No live setup command, DB
-migration, transfer, legal disposition, grant or resource restart was executed.
+## Limits
 
+- Only the collecting officer's receipts are listed.
+- The collection receipt is the initial custody record; later third-party moves
+  rely on Inventory's own guards and events, not a complete court-ready history.
+- A return goes to the recorded subject only; returning to someone else is not offered.
 
-Offline verification on 2026-10-19: `python3 tests/run_lua.py` passes 504 checks,
-including 29 Inventory transaction-model and 31 Law evidence-authority checks.
-`node tests/ui.cjs` and `node --check ui/app.js` pass. The transaction model
-covers rollback, guard veto, capacity, session changes, altered payloads, exact
-replay after restart/offline and explicit partial-link failure. These are not live
-MariaDB concurrency or RedM acceptance results.
+## Tests
+
+`tests/suite/f_evidence.lua` runs the whole flow on a real database with the real
+Justice: search, seizure, collection, guard, a forged physical request refused,
+returned/destroyed/forfeited, a failed step reported and requeued. Inventory is
+mocked at its export boundary there; in game, check a real return into a full
+inventory and a weapon item ([acceptance tests](ACCEPTANCE_TESTS.md)).

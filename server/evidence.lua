@@ -2,6 +2,7 @@ local maximum=9007199254740990
 local function Int(n,min,max) return type(n)=='number' and n%1==0 and n>=min and n<=max end
 local function Number(n,min,max) return type(n)=='number' and n==n and n>=min and n<=max end
 local setup={}
+local physical
 local collectFields={department=true,caseId=true,expectedCaseRevision=true,targetSource=true,warrantId=true,
     itemId=true,itemRevision=true,lockerKey=true,description=true,requestId=true}
 local function Payload(p,fields)
@@ -28,14 +29,7 @@ function Law.ValidateEvidenceConfig()
     end
     return count<=32
 end
-local function CaseAccess(p,source,context,action)
-    local actor=Law.Access(source,context,p.department,action);if not actor.ok then return actor end
-    local case=Law.Call('feather-justice','GetCase',{actorSource=source,recordId=p.caseId})
-    if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed.') end
-    if not case.ok then return case end
-    if type(case.value)~='table' or case.value.jurisdictionId~=actor.value.jurisdictionId then return Law.Err('not_found','Case unavailable.') end
-    return actor
-end
+local function CaseAccess(p,source,context,action) return Law.CaseAccess(p,source,context,action) end
 local function Inventory(operation,p)
     local r=Law.Call('feather-inventory',operation,p)
     if not r.ok and type(r.error)=='table' then return Law.Err(r.error.code,r.error.message) end
@@ -48,9 +42,8 @@ local function Internal(p,actor)
     return r
 end
 local function ProviderReady()
-    local c=Law.Call('feather-justice','GetCapabilities')
-    return c.ok and type(c.value)=='table' and c.value.contract==1 and type(c.value.features)=='table'
-        and c.value.features.evidenceLinks==1 and c.value.features.evidenceGuard==1
+    local c=Law.JusticeContract()
+    return c~=nil and c.features.evidenceLinks==1 and c.features.evidenceGuard==1
 end
 function Law.EvidenceAvailable()
     if not Law.Ready() or not ProviderReady() then return false end
@@ -62,12 +55,12 @@ local function CollectAccess(p,source,context)
     local field=Law.Access(source,context,p.department,'law.evidence.collect');if not field.ok then return field end
     if not ProviderReady() then return Law.Err('evidence_unavailable','Justice evidence link and guard must be ready.') end
     local target=Law.RestrainedTarget(actor.value,p.targetSource,p.department);if not target.ok then return target end
-    local warrant=Law.Call('feather-justice','GetWarrant',{actorSource=source,recordId=p.warrantId})
+    local warrant=Law.Call('feather-justice','GetWarrant',{actorSource=source,warrantId=p.warrantId})
     if not warrant.ok then return warrant end
     local w=warrant.value
     if type(w)~='table' or w.status~='active' or w.caseId~=p.caseId or w.jurisdictionId~=actor.value.jurisdictionId
         or type(w.subjectCharacterId)~='string' or w.subjectCharacterId:lower()~=target.value.characterId:lower()
-        or type(w.document)~='table' or w.document.warrantType~='seizure' then
+        or w.warrantType~='seizure' then
         return Law.Err('seizure_authority_required','An active seizure warrant for this subject and case is required.')
     end
     local c=LawConfig.Evidence.Lockers[p.lockerKey or '']
@@ -92,6 +85,18 @@ exports('AuthorizeEvidenceOperation',function(operation,p)
         if not key or not setup[key] or not LawConfig.Evidence.Lockers[key] then return Law.Err('authorization_denied','Explicit console setup required.') end
         return Law.Ok({locker=Law.Copy(LawConfig.Evidence.Lockers[key])})
     end
+    -- A physical return/destruction is allowed only for a disposition Justice
+    -- recorded and Law queued (see Law.DeliverDispositions).
+    if operation=='dispose' then
+        if type(p)~='table' or not Law.Uuid(p.evidenceLinkId) or not Int(p.itemId,1,maximum) or Law.Store.state~='ready' then
+            return Law.Err('invalid_input','Invalid disposition.')
+        end
+        local row=Law.Store.Disposition(p.evidenceLinkId:lower())
+        if not row or row.state~='pending' or tonumber(row.item_id)~=p.itemId or row.disposition~=p.disposition then
+            return Law.Err('authorization_denied','No recorded disposition for this item.')
+        end
+        return Law.Ok({recipientCharacterId=row.recipient_character_id})
+    end
     if type(p)~='table' or not Int(p.actorSource,1,65535) or not Law.Uuid(p.characterId) or not Law.Uuid(p.sessionId)
         or not Law.Token(p.department,48) or not Law.Uuid(p.caseId) then return Law.Err('invalid_input','Invalid actor/case context.') end
     local context={characterId=p.characterId,sessionId=p.sessionId}
@@ -106,14 +111,62 @@ local function LinkReceipt(p,actor,receipt,requestId,expectedRevision)
     if not ProviderReady() then return Law.Err('evidence_link_pending','Collected item awaits Justice evidence readiness. Retain the transfer ID.') end
     local r=Law.Call('feather-justice','LinkEvidence',{actorSource=actor.source,caseId=p.caseId,
         expectedCaseRevision=expectedRevision,requestId=actor.characterId..':'..requestId,
-        reasonCode='law.evidence.collected',evidenceType='inventory_item',evidenceRef=('%.0f'):format(receipt.itemId),
+        reasonCode='law.evidence.collected',evidenceType='inventory_item',evidenceId=('%.0f'):format(receipt.itemId),
         relationship='collected',description=receipt.description,subjectCharacterId=receipt.subjectCharacterId})
     if not Law.Current(actor) then return Law.Err('session_expired','Character changed; retain the transfer ID.') end
     if not r.ok then return {ok=false,code='evidence_link_pending',message='Collection is committed; Justice link needs recovery or a reviewed new link intent.',
         details={transferRequestId=receipt.requestId,linkCode=r.code}} end
     return Law.Ok({transfer=receipt,link=r.value})
 end
-Law.Routes['law.evidence.collect.v1']={
+-- Physical disposition (Justice workflow "Evidence collection": Inventory owns the
+-- instance). Justice records the disposition first and it is immutable; then Law
+-- asks Inventory to give the item back to the person it was seized from, or to
+-- destroy it. A durable queue row makes the step retryable after restarts.
+-- Forfeited items stay in the locker; a link removed without a disposition too.
+physical={returned='ReturnLawEvidence',destroyed='DestroyLawEvidence'}
+-- A full recipient inventory (slots, weight, per-item limit) may free up: keep retrying.
+local retryable={not_ready=true,dependency_unavailable=true,dependency_missing=true,internal=true,conflict=true,
+    limit_exceeded=true,inventory_full=true,weight_limit=true,item_limit=true,session_expired=true,
+    transaction_failed=true,weapons_unavailable=true}
+function Law.QueueDisposition(link)
+    if type(link)~='table' or link.evidenceType~='inventory_item' or not physical[link.disposition or '']
+        or not Law.Uuid(link.evidenceLinkId) or Law.Store.state~='ready' then return false end
+    local itemId=tonumber(link.evidenceId);if not itemId then return false end
+    Law.Store.DispositionQueue(link.evidenceLinkId,link.caseId,itemId,link.disposition,
+        Law.Uuid(link.subjectCharacterId) and link.subjectCharacterId or nil)
+    return true
+end
+local delivering=false
+function Law.DeliverDispositions()
+    if delivering or Law.Store.state~='ready' then return end
+    delivering=true
+    local ok,err=pcall(function()
+        local capabilities=Inventory('GetLawEvidenceCapabilities')
+        local inventory=capabilities.ok and type(capabilities.value)=='table' and capabilities.value.state=='ready' and capabilities.value or nil
+        if not inventory then return end
+        for _,row in ipairs(Law.Store.DispositionsPending(25)) do
+            local id=row.evidence_link_id
+            if inventory[row.disposition=='returned' and 'returns' or 'destruction']~=1 then Law.Store.DispositionMark(id,'pending','inventory_unsupported')
+            elseif row.disposition=='returned' and not Law.Uuid(row.recipient_character_id) then Law.Store.DispositionMark(id,'failed','recipient_unknown')
+            else
+                local r=Inventory(physical[row.disposition],{requestId='law:evidence:'..row.disposition..':'..id,evidenceLinkId=id,
+                    itemId=tonumber(row.item_id),recipientCharacterId=row.recipient_character_id})
+                if r.ok then Law.Store.DispositionMark(id,'done',type(r.value)=='table' and r.value.alreadyAbsent and 'already_absent' or nil)
+                elseif retryable[r.code] then Law.Store.DispositionMark(id,'pending',r.code)
+                else Law.Store.DispositionMark(id,'failed',r.code) end
+            end
+        end
+    end)
+    delivering=false
+    if not ok then print('[bcc-law] event=evidence.disposition_failed reason='..tostring(err):match('^[^\n]*'):sub(1,160)) end
+end
+CreateThread(function()
+    while true do
+        Wait(15000)
+        if Law.Ready() then pcall(Law.DeliverDispositions) end
+    end
+end)
+Law.Routes['law.evidence.collect.v1']={mutation=true,
     validate=function(p) return CollectValid(p,false) end,
     handler=function(p,source,context)
         local actor=CaseAccess(p,source,context,'justice.evidence.link');if not actor.ok then return actor end
@@ -133,7 +186,7 @@ Law.Routes['law.evidence.receipts.v1']={
         return r
     end
 }
-Law.Routes['law.evidence.attach.v1']={
+Law.Routes['law.evidence.attach.v1']={mutation=true,
     validate=function(p) return Payload(p,{department=true,caseId=true,transferRequestId=true,requestId=true,expectedCaseRevision=true})
         and Law.Token(p.transferRequestId,128) and Law.Token(p.requestId,64) and Int(p.expectedCaseRevision,1,maximum) end,
     handler=function(p,source,context)
@@ -149,22 +202,33 @@ Law.Routes['law.evidence.list.v1']={
     validate=function(p) return Payload(p,{department=true,caseId=true,cursor=true}) and (p.cursor==nil or Law.Uuid(p.cursor)) end,
     handler=function(p,source,context)
         local actor=CaseAccess(p,source,context,'justice.evidence.view');if not actor.ok then return actor end
-        local r=Law.Call('feather-justice','ListCaseEvidence',{actorSource=source,caseId=p.caseId,cursor=p.cursor,limit=25})
+        local r=Law.Call('feather-justice','ListCaseEvidence',{actorSource=source,caseId=p.caseId,cursor=p.cursor,includeRemoved=true,limit=25})
         if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed.') end
+        if r.ok and type(r.value)=='table' and Law.Store.state=='ready' then
+            for _,item in ipairs(r.value.items or {}) do
+                if physical[item.disposition or ''] then
+                    local row=Law.Store.Disposition(item.evidenceLinkId)
+                    item.physicalState=row and row.state or 'pending'
+                end
+            end
+        end
         return r
     end
 }
-Law.Routes['law.evidence.disposition.v1']={
-    validate=function(p) return Payload(p,{department=true,caseId=true,recordId=true,expectedRevision=true,disposition=true,requestId=true})
-        and Law.Uuid(p.recordId) and Int(p.expectedRevision,1,maximum) and Law.Token(p.requestId,64)
-        and ({returned=true,destroyed=true,forfeited=true})[p.disposition or '']==true end,
+-- Ends a case link. With a disposition (returned/destroyed/forfeited) this is the
+-- immutable disposition record the plan requires before an item may be destroyed;
+-- judicial qualification is then required (EvaluateActionPolicy).
+Law.Routes['law.evidence.remove.v1']={mutation=true,
+    validate=function(p) return Payload(p,{department=true,caseId=true,evidenceLinkId=true,expectedRevision=true,disposition=true,requestId=true})
+        and Law.Uuid(p.evidenceLinkId) and Int(p.expectedRevision,1,maximum) and Law.Token(p.requestId,64)
+        and (p.disposition==nil or ({returned=true,destroyed=true,forfeited=true})[p.disposition]==true) end,
     handler=function(p,source,context)
-        local actor=CaseAccess(p,source,context,'justice.evidence.dispose');if not actor.ok then return actor end
-        local r=Law.Call('feather-justice','RecordEvidenceDisposition',{actorSource=source,caseId=p.caseId,recordId=p.recordId,
+        local actor=CaseAccess(p,source,context,'justice.evidence.link');if not actor.ok then return actor end
+        local result=Law.Dispatch(actor.value,'RemoveEvidenceLink',{actorSource=source,evidenceLinkId=p.evidenceLinkId,
             expectedRevision=p.expectedRevision,requestId=actor.value.characterId..':'..p.requestId,
-            reasonCode='law.evidence.disposition',disposition=p.disposition})
-        if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed; retain the request ID.') end
-        return r
+            reasonCode='law.evidence.remove',disposition=p.disposition})
+        if result.ok and Law.QueueDisposition(result.value) then CreateThread(function() pcall(Law.DeliverDispositions) end) end
+        return result
     end
 }
 Law.Routes['law.evidence.lockers.v1']={
@@ -190,7 +254,23 @@ RegisterCommand('LawEvidenceStatus',function(source)
     if source~=0 then return end
     local inventory=Inventory('GetLawEvidenceCapabilities')
     local count=0;for _ in pairs(LawConfig.Evidence.Lockers) do count=count+1 end
-    print(('[LawEvidenceStatus] law=%s inventory=%s justiceEvidenceGuard=%s configuredLockers=%d'):format(
+    local pending=Law.Store.state=='ready' and #Law.Store.DispositionsPending(100) or 0
+    local failed=Law.Store.state=='ready' and Law.Store.DispositionsByState('failed',25) or {}
+    print(('[LawEvidenceStatus] law=%s inventory=%s justiceEvidenceGuard=%s configuredLockers=%d dispositionsPending=%d dispositionsFailed=%d'):format(
         tostring(Law.Ready()),inventory.ok and tostring(inventory.value.state) or tostring(inventory.code),
-        tostring(ProviderReady()),count))
+        tostring(ProviderReady()),count,pending,#failed))
+    for _,row in ipairs(failed) do
+        print(('[LawEvidenceStatus] failed link=%s item=%s disposition=%s code=%s attempts=%s'):format(row.evidence_link_id,
+            tostring(row.item_id),row.disposition,tostring(row.last_code),tostring(row.attempts)))
+    end
+end,true)
+-- After staff fixed the cause (for example the recipient freed space), queue a failed
+-- physical step again. The Inventory request ID stays the same, so it never runs twice.
+RegisterCommand('LawEvidenceRetry',function(source,args)
+    if source~=0 then return end
+    local id=args[1] and args[1]:lower()
+    if not Law.Uuid(id) or Law.Store.state~='ready' then print('[LawEvidenceRetry] usage: LawEvidenceRetry <evidenceLinkId>');return end
+    local changed=Law.Store.DispositionRetry(id)
+    print(('[LawEvidenceRetry] link=%s requeued=%s'):format(id,tostring(changed==1)))
+    if changed==1 then CreateThread(function() pcall(Law.DeliverDispositions) end) end
 end,true)

@@ -1,6 +1,0 @@
--- Deprecated reference: DO NOT append Justice actions to Config.permissions.
--- Admin's reviewed Authority catalog has fixed migration IDs and a fixed size.
--- Current integration uses feather-admin/configs/law_acceptance_policy.lua,
--- loaded server-side by its manifest. It recognizes the explicit Justice action
--- list behind an existing owner-only entitlement, without adding capabilities
--- or granting a player any role. Final officer/judge policy is still separate.

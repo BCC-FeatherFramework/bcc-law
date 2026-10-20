@@ -1,26 +1,58 @@
+-- MDT transport. The browser can only name an operation from this fixed list; each
+-- maps to one versioned server route. Text comes from locales/*.lua in the player's
+-- Core account language (feather-core:locale:changed keeps it current).
 local epoch,opened,opening,busy=0,false,false,false
 local operations={}
-for _,name in ipairs({'cases.list','cases.open','cases.get','cases.update','cases.transition','charges.list',
-    'charges.propose','charges.file','charges.dispose','warrants.list','warrants.active','warrants.draft',
-    'warrants.issue','warrants.serve','warrants.recall','warrants.quash','parties.list','parties.add','parties.remove','statutes.list','citations.list','citations.issue','citations.cancel','custody.facilities','custody.list','custody.reserve','custody.confirm','custody.release','operations.get'}) do
-    operations[name]='law.'..name..'.v1'
+local function Routes(group,names)
+    for _,name in ipairs(names) do operations[group..'.'..name]='law.'..group..'.'..name..'.v1' end
 end
+Routes('cases',{'list','open','get','update','transition','seal','unseal','expunge','history'})
+Routes('parties',{'list','add','remove'})
+Routes('charges',{'list','propose','amend','file','dispose'})
+Routes('warrants',{'list','active','draft','issue','serve','recall','quash'})
+Routes('statutes',{'list','register','revise'})
+Routes('citations',{'list','issue'})
+Routes('custody',{'facilities','list','arrest','book','release'})
+Routes('rulings',{'list','record'})
+Routes('sentences',{'list','create','activate','suspend','complete'})
+Routes('evidence',{'collect','receipts','attach','list','remove','lockers'})
+Routes('restraints',{'apply','release','escort'})
+Routes('search',{'inspect','finish'})
+Routes('armory',{'stations','catalog','claim','claims'})
+Routes('execution',{'self'})
+Routes('service',{'start'})
 operations['debts.list']='contracts.obligations.list.v1'
 operations['debts.settle']='contracts.obligation.settle.v1'
-operations['search.inspect']='law.search.inspect.v1'
-operations['search.finish']='law.search.finish.v1'
-for _,name in ipairs({'stations','catalog','claim','claims'}) do operations['armory.'..name]='law.armory.'..name..'.v1' end
-operations['warrants.search.draft']='law.warrants.search.draft.v1'
-operations['warrants.seizure.draft']='law.warrants.seizure.draft.v1'
-operations['warrants.summons.draft']='law.warrants.summons.draft.v1'
-for _,name in ipairs({'rulings.list','rulings.record','sentences.list','sentences.create','sentences.activate','sentences.suspend','sentences.resume','sentences.vacate','charges.amend','cases.seal','cases.unseal','cases.expunge','cases.history','custody.sentence.reserve','execution.self','service.start'}) do operations[name]='law.'..name..'.v1' end
-for _,name in ipairs({'collect','receipts','attach','list','disposition','lockers'}) do operations['evidence.'..name]='law.evidence.'..name..'.v1' end
-for _,name in ipairs({'apply','release','escort'}) do operations['restraints.'..name]='law.restraints.'..name..'.v1' end
+
+Law.ClientLocale='en'
+-- English is the base; the chosen language overrides the keys it translates.
+local function Strings(lang)
+    local strings={}
+    for key,text in pairs(LawLocales.en) do strings[key]=text end
+    for key,text in pairs(LawLocales[lang] or {}) do strings[key]=text end
+    return strings
+end
+local function SetLocale(lang)
+    local chosen=Law.Locale(lang)
+    if chosen==Law.ClientLocale then return end
+    Law.ClientLocale=chosen
+    if opened then SendNUIMessage({type='locale',locale=chosen,strings=Strings(chosen)}) end
+end
+AddEventHandler('feather-core:locale:changed',SetLocale)
+CreateThread(function()
+    for _=1,10 do
+        local ok,r=pcall(function() return exports['feather-core']:CallRPCAsync('core.account.settings.get.v1',{},nil,5000) end)
+        if ok and type(r)=='table' and r.ok and type(r.value)=='table' then SetLocale(r.value.locale);return end
+        Wait(3000)
+    end
+end)
+
 local function Close()
     epoch=epoch+1;opened,opening,busy=false,false,false
     SetNuiFocus(false,false);SendNUIMessage({type='close'})
 end
-RegisterCommand('law',function(_,args)
+-- officer = MDT; inmate = own legal status; debtor = own fines.
+local function Open(mode,department)
     if opening then return end
     Close();opening=true
     local generation=epoch
@@ -28,19 +60,18 @@ RegisterCommand('law',function(_,args)
         local ok,result=pcall(function() return exports['feather-core']:CallRPCAsync('law.session.get.v1',{},nil,10000) end)
         if generation~=epoch then return end
         opening=false
-        if not ok or type(result)~='table' or not result.ok then print('[bcc-law] Serviciul nu este disponibil.');return end
+        if not ok or type(result)~='table' or not result.ok or type(result.value)~='table' then
+            print(Law.T(Law.ClientLocale,'client.unavailable'));return
+        end
+        Law.ClientLocale=Law.Locale(result.value.locale)
         opened=true;SetNuiFocus(true,true)
-        SendNUIMessage({type='open',epoch=epoch,departments=result.value.departments,department=args and args[1]})
+        SendNUIMessage({type='open',epoch=epoch,mode=mode,department=department,session=result.value,
+            locale=Law.ClientLocale,strings=Strings(Law.ClientLocale)})
     end)
-end,false)
-RegisterCommand('lawstatus',function()
-    Close();opened=true;SetNuiFocus(true,true)
-    SendNUIMessage({type='open',epoch=epoch,mode='inmate',departments={}})
-end,false)
-RegisterCommand('lawfines',function()
-    Close();opened=true;SetNuiFocus(true,true)
-    SendNUIMessage({type='open',epoch=epoch,mode='debtor',departments={}})
-end,false)
+end
+RegisterCommand('law',function(_,args) Open('officer',args and args[1]) end,false)
+RegisterCommand('lawstatus',function() Open('inmate') end,false)
+RegisterCommand('lawfines',function() Open('debtor') end,false)
 RegisterNUICallback('close',function(_,cb) Close();cb({ok=true}) end)
 RegisterNUICallback('request',function(data,cb)
     if not opened or busy or type(data)~='table' or data.epoch~=epoch or not operations[data.operation]

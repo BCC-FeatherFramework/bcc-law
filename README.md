@@ -1,147 +1,145 @@
-# BCC Law — native Feather development build
+# BCC Law — native Feather law gameplay
 
-Version 2.0.0-alpha.9. This is a native implementation slice, **not the
-complete police resource**. Do not deploy it as a replacement for a working
-police system. The original uploaded package and UI are preserved outside this
-resource; see [baseline location](docs/BASELINE.md).
+Version **2.0.0-beta.1**. Law gameplay on top of
+[Feather Justice](../../[feather]/feather-justice/README.md) Contract 1 (0.3.0):
+the MDT, field interactions, arrest and booking, court, jail and community
+service, evidence, armory, alerts and cell doors.
 
-Implemented: bounded lifecycle/readiness, current-session identity, allowlisted
-Core routes, active-duty/grade/qualification/policy checks, owner-scoped Justice
-case listing/creation, charge and arrest-warrant routes, participant operations, record access checks, a native MDT, durable citation obligations and own-wallet fine payment. No compatibility
-API or foreign-domain SQL is used.
+Justice owns every legal record: cases, parties, charges, warrants, citations,
+custody, rulings, sentences, evidence links and the penal code. Law owns the
+interactions around them: who is standing where, restraints, jail placement,
+work units, armory claims, physical evidence steps and alerts. Law keeps only its
+own tables and never reads Justice tables (see [master plan](BCC_LAW_MASTER_PLAN.md) §2).
 
-Warrant-backed cuffs and escort are available through the MDT's `Teren` tab or
-`/lawcuff <department> <player source> <arrest warrant UUID>`,
-`/lawuncuff <department> <player source>`,
-`/lawescort <department> <player source> <on|off>`.
-Both players must be nearby and alive, with a current character session.
-The explicit `law.restraint.manage` policy action is required in addition to
-duty/qualification; the installed Admin adapter checks qualified, on-duty police. These interactions do not create legal custody.
-See [restraint behavior and limits](docs/ALPHA6_CHECKPOINT.md).
+## Requirements
 
-Not implemented yet: the remaining police gameplay,
-physical evidence return/destruction, payroll, alerts, doors, or historical data import. Unimplemented gameplay capabilities remain disabled. The original locations, translations and UI
-remain in the backup for the next porting slices.
+Start order: `feather-mysql`, `feather-core`, `feather-character`, `feather-jobs`,
+`feather-licenses`, `feather-contracts`, `feather-inventory`, `feather-justice`,
+then `bcc-law`. Optional: `bcc-doorlocks` (cell doors), `feather-weapons` (armory
+weapons), `feather-medical` (life state for jail placement).
 
-## Dependencies and staging
+Owner configuration this resource relies on (already present in the Feather
+resources of this server; nothing here grants a role to a player):
 
-Required: feather-core, feather-character, feather-jobs, feather-licenses,
-feather-justice. Law and Justice additionally require feather-mysql.
-Use coordinated compatible versions, with Core/MySQL before their consumers.
-Run `refresh` before starting the new manifests. No running resources were restarted; `server.cfg` was not edited.
+| Where | Setting |
+|---|---|
+| feather-jobs `config.lua` | `Config.Access.trustedReaders['bcc-law']` (duty checks) |
+| feather-licenses `config.lua` | `Config.Access.trustedReaders['bcc-law']` (commission checks) |
+| feather-contracts `config.lua` | trusted issuer `feather-justice` (fines, restitution) |
+| feather-justice `config.lua` | `TrustedResources` and `DefinitionResources` include `bcc-law` |
+| feather-admin `configs/law_acceptance_policy.lua` | `mode='qualified'`: Law decides its 40 actions |
+| feather-admin `configs/service_policy.lua` | `['feather-justice']['bcc-law']`: `justice.definition.view/manage`, `justice.custody.view`, `justice.sentence.view`, `justice.sentence.complete` |
 
-`config.lua` is server-only. Proposed initial defaults are `new_hanover`, job
-`police`, commission `peace_officer`, jurisdiction key `bcc-law:new_hanover`.
-They do not create a job or commission and grant no authority. When departments
-are tied to different organizations, set their actual `employerId` values.
-The Law reader currently requires an empty version-1 license scope. A nonempty
-or unknown scope fails closed until its vocabulary is agreed with Licenses.
+## Installation
 
-Before positive gameplay acceptance:
+1. `refresh`, then `ensure bcc-law` after its dependencies (or restart the server).
+2. Console, once: `LawSetupJurisdictions` — registers `bcc-law:new_hanover` in Justice.
+3. Console, once: `LawSetupStatutes` — registers the starter penal code (12 statutes).
+4. Console, once per locker: `LawSetupEvidenceLockers` — creates the private evidence lockers in Inventory.
+5. Console: `LawReleaseContractSmokeTest` — read-only; expect `ready=true routes=63/63 justice=0.3.0 store=ready`.
+6. Console: `LawAcceptanceTest <officerUUID> <subjectUUID>` — expect `0 failed`. Both
+   characters may be offline. See [acceptance tests](docs/ACCEPTANCE_TESTS.md).
 
-1. Verify `bcc-law` reader trust in Jobs and Licenses; current workspace includes it.
-   Do not grant registrar/assigner/issuer privileges just for reading.
-2. Register the real police job/grades through Society/Jobs, and define/issue the
-   required commission through Licenses. Configuration trust does not create either.
-3. Admin's server-only `configs/law_acceptance_policy.lua` recognizes the explicit
-   Justice actions using fresh duty, grade and commission checks. Police powers
-   require qualified on-duty police; judicial powers require the configured judge
-   assignment and judicial commission. Justice also enforces case eligibility and
-   judge participation. Audit history additionally requires Admin audit permission.
-   No fixed Admin catalog entries or player-role assignments are changed.
-4. Explicit definition setup uses source 0 and `justice.definition.manage`.
-   With the existing Admin service-policy provider, the principal is
-   `Config.servicePolicy['feather-justice']['bcc-law']`. Add only the reviewed
-   definition action there, and ensure that action is enabled by that provider.
-   A service grant never substitutes for player authorization.
-5. Run `LawSetupJurisdictions` in the server console after dependencies are
-   ready. This command **writes definitions** and reuses stable request IDs.
-   It is never executed on startup. Label changes require a future versioned
-   definition-update operation, not reuse of the existing receipt with new data.
-6. Use `JusticeContractSmokeTest` and `LawReleaseContractSmokeTest` for read-only
-   diagnostics. They report readiness, not blanket release acceptance.
-7. With a valid on-duty, active assignment and commission, `/law new_hanover`
-   opens the MDT: case creation/details/summary/transitions, participants, charges,
-   arrest warrants and paginated lists. Escape closes it and releases focus.
+All setup commands are idempotent: a rerun reports `already_registered` /
+`alreadyPresent`. Startup never creates definitions, jobs, commissions or policy.
 
-Missing trust, policy, jurisdiction, duty or commission returns a rejection;
-there is no permissive fallback and no setup performed against the live server.
+## Who can do what
 
-## Current routes
+Each action has a rule (`Law.PolicyRules` in `server/foundation.lua`); feather-admin
+asks Law through `EvaluateActionPolicy` and Justice then checks case membership.
 
-All routes require an active Core character session. No route accepts an actor
-identity or jurisdiction from the client. Rate: five calls per five seconds per
-route; payload limit 8192 bytes, depth 2, nodes 12 by default; ruling findings use bounded deeper limits.
-
-| Route | Payload | Result |
+| Rule | Requirement | Examples |
 |---|---|---|
-| `law.session.get.v1` | `{}` | Configured department keys and labels; no personal IDs |
-| `law.cases.list.v1` | `{ department, cursor? }` | Justice case page, maximum 25 |
-| `law.cases.open.v1` | `{ department, requestId, title, summary }` | Committed case or an error envelope |
+| officer | on duty in `police` + valid `peace_officer` commission | restraints, search, evidence collection, arrest/booking, citations, armory |
+| judicial | `judge` assignment + `judicial_commission` | rulings, sentences, penal code, sealing/expunging, search/seizure warrants, evidence dispositions |
+| legal | either profile | cases, parties, charges, arrest warrants, reading records |
 
-Alpha.9 exposes 65 routes, including parties, case edits/transitions, statute lists, citations, custody, restraints and operation recovery. See [legal route fields and required policy](docs/LEGAL_ROUTES.md).
-The MDT uses only these typed server routes. See [alpha.5 checkpoint](docs/ALPHA5_CHECKPOINT.md).
+Protected history (`justice.audit.view`) additionally needs the feather-admin
+`staff.admin.audit.search` permission. Configure departments, jobs and licenses in
+`config.lua` (`Departments`, including the `judicial` profile).
 
-Open requests are scoped to the authenticated character; `requestId` is at most
-64 characters. After an unknown result, reuse the **same ID and payload**.
-Changing character, department, title or summary is not an exact retry.
+## Player commands
 
-## Verification
+| Command | Who | What |
+|---|---|---|
+| `/law [department]` | officers, judges | Opens the MDT |
+| `/lawstatus` | anyone | Own custody time and community-service units |
+| `/lawfines` | anyone | Own fines and payment from the wallet |
+| `/lawalert [department] <message>` | anyone | Report to on-duty officers (with your position) |
+| `/lawcuff <department> <player> <UUID> [custody]` | officers | Restrain under an arrest warrant (or a custody record) |
+| `/lawuncuff <department> <player>`, `/lawescort <department> <player> <on\|off>` | officers | Release / escort |
 
-From this resource: `python3 tests/run_lua.py`. Requires Python and the Lua 5.4
-shared library. Run `node tests/ui.cjs` for browser logic checks and `node --check ui/app.js` for JavaScript syntax.
-Tests use mocked Core/domain/network calls, not a live database or RedM session.
-The runner syntax-checks every Lua file in the resource before execution.
+Shots fired inside a configured area alert on-duty officers automatically.
 
-Live work still required: provider grants, real migrations/transactions and
-restart recovery, two-player access isolation, focus/visual acceptance and the
-remaining gameplay port. See [masterplan](BCC_LAW_MASTER_PLAN.md).
+## Console commands
 
-Staging fragments and acceptance steps: [staging/README.md](staging/README.md).
-Participant roles and case access: [Justice participants](../../[feather]/feather-justice/PARTICIPANTS.md).
+| Command | Writes? | Purpose |
+|---|---|---|
+| `LawSetupJurisdictions`, `LawSetupStatutes`, `LawSetupEvidenceLockers` | yes (definitions) | Explicit setup |
+| `LawReleaseContractSmokeTest` | no | Version, routes, Justice release, store |
+| `LawAcceptanceTest [officerUUID] [subjectUUID]` | Law dev rows, removed after | Readiness, qualification and Law table checks |
+| `LawActiveCharacters` | no | UUIDs of characters online right now |
+| `LawEvidenceStatus` | no | Lockers and pending/failed physical evidence steps |
+| `LawEvidenceRetry <evidenceLinkId>` | yes | Queue a failed physical step again (same request ID) |
 
-Citation/fine API and limits: [Justice citations](../../[feather]/feather-justice/CITATIONS.md).
-Commands: `/lawfines`, console `JusticeCitationStatus`, and console
-`LawCitationPreflight <characterUUID> [department]`. Contracts is optional for the
-base case resource but required for citation issuance and payment; start it before
-Justice/Law for financial testing. Its client routes must be enabled for `/lawfines`.
+## Configuration (`config.lua`, server only)
 
-Alpha.5 adds manual custody booking/confirmation/release with server-side location
-guards; [custody API and limits](../../[feather]/feather-justice/CUSTODY.md). Alpha.9 adds separate sentence-based physical execution; manual booking alone
-does not create a sentence.
+`DefaultLocale`, `Departments` (job, commission, jurisdiction key, judicial
+profile, optional `employerId`), `CaseTypes`, `Statutes` (starter penal code with
+advisory ranges), `Armory.Stations`, `Execution` (jail facilities, work tasks),
+`Restraints`, `Evidence.Lockers`, `Custody.Facilities` (booking), `Doors.Facilities`
+(bcc-doorlocks door IDs per facility; empty by default) and `Alerts` (cooldowns,
+blip time, shots-fired areas). The configuration is validated on every readiness
+check; an invalid value puts Law in `failed/invalid_config`.
 
-The agreed sentence policy is **elapsed time continues while offline**. Reconnect
-uses the authoritative Justice deadline through the implemented sentence contract. The physical restraint timeout is separate from any legal sentence.
+## Languages
 
-If preflight reports `character_not_in_active_session`, console-only
-`LawActiveCharacters` lists UUIDs of currently selected Core characters. Stored
-Character status `active` does not mean a player is connected. The diagnostic
-prints UUID and transport source only; it creates no session or role.
+English is the default; Romanian is included (`locales/en.lua`, `locales/ro.lua`).
+The language follows the player's Core account setting (`feather-core:locale:changed`
+while the MDT is open); unknown languages fall back to `DefaultLocale`, then English.
+To add a language, copy `locales/en.lua`, translate the values, add the file to
+`shared_scripts` in `fxmanifest.lua`. Missing keys fall back to English.
 
-Live checks with aligned PASS/FAIL/SKIP and a final tally:
-`LawAcceptanceTest preflight <A UUID> <B UUID>` is read-only;
-`LawAcceptanceTest <A UUID> <B UUID> [freshRunId]` writes tagged legal test records.
-Separate `finance`, `custody`, `resume` and `cleanup` modes are documented in
-[acceptance commands](docs/ACCEPTANCE_TESTS.md). No job/license/policy bypass exists.
+## Data
 
+| Table | Holds |
+|---|---|
+| `bcc_law_schema_migrations` | Version and checksum of each Law migration |
+| `bcc_law_operations` | Operation journal: identifiers, revision and status of confirmed mutations (kept 7 days) |
+| `bcc_law_placements` | Jail placement marker per character |
+| `bcc_law_service_progress`, `bcc_law_service_tasks` | Community-service units, each counted once |
+| `bcc_law_armory_claims` | Armory claims and the daily quota |
+| `bcc_law_evidence_dispositions` | Physical return/destruction steps queued after a Justice disposition |
 
-Read-only warranted searches are available in `Teren`. Inventory must include
-`server/services/law_search.lua`; Justice must support search warrants. Each page
-rechecks the officer, target, restraint, warrant and proximity. Explicitly finish
-the search to serve the warrant. No writable inventory access or confiscation is
-granted. See [search checkpoint](docs/ALPHA7_CHECKPOINT.md) and
-[Law acknowledgement of Claude's agreement](docs/JUSTICE_INTEGRATION_REVIEW.md).
+Migrations are versioned and checksummed; version 1 is unchanged from earlier builds.
 
+## Routes
 
-Alpha.8 adds private evidence lockers, durable instance-preserving collection
-receipts, Justice evidence links, explicit recovery and legal disposition controls.
-Use case → `Probe`. Review [evidence setup, recovery and limitations](docs/EVIDENCE.md)
-before explicitly running console `LawSetupEvidenceLockers` on staging. Physical
-returns/destruction and complete custody history for future external moves remain
-open. No live lockers, migrations, collections or dispositions were performed.
+63 routes `law.<group>.<operation>.v1`, all requiring a current character session.
+Every mutation takes a client `requestId` (≤64): an exact retry returns the stored
+result; a changed payload under the same ID is refused. See [routes](docs/ROUTES.md).
 
-Alpha.9 adds court rulings, all seven sentence forms, privacy controls, UTC jail
-placement/release, observed community service and a durable daily-quota armory.
-Use `/lawstatus` for your own sentence/task status. Review
-[the current checkpoint](docs/ALPHA9_CHECKPOINT.md) for configuration, persistence,
-provider requirements and the remaining live acceptance gates.
+## Tests
+
+```sh
+python3 tests/run.py --server-cfg ../../../server.cfg
+```
+
+Runs bcc-law together with the real feather-justice on a throwaway MariaDB schema
+(`law_test_<pid>`, always dropped): lifecycle and migrations, setup, policy,
+arrest → booking → release, court → jail → offline term → release, community
+service, search and evidence with physical dispositions, alerts, the penal-code
+editor, citations, sealing, the acceptance command and the MDT ↔ client ↔ route
+contract. It also runs the client checks (`tests/client/`) and the MDT browser
+checks (`tests/ui.cjs`). The two offline test characters are the officer/judge and
+the subject; Core, Jobs, Licenses, Contracts, Inventory and the game world are
+mocked at their export boundary. In-game checks: [acceptance tests](docs/ACCEPTANCE_TESTS.md).
+
+## Documents
+
+[Master plan](BCC_LAW_MASTER_PLAN.md) · [Beta 1 checkpoint](docs/BETA1_CHECKPOINT.md) ·
+[Routes](docs/ROUTES.md) · [Evidence](docs/EVIDENCE.md) · [Acceptance tests](docs/ACCEPTANCE_TESTS.md) ·
+[Justice integration agreement](../../[feather]/feather-justice/LAW_INTEGRATION.md) ·
+[Original baseline](docs/BASELINE.md) · earlier checkpoints in `docs/history/`.
+
+License: GPL-3.0 (see `LICENSE`).

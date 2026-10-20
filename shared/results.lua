@@ -23,3 +23,24 @@ function Law.Copy(value)
     local copy = {}; for key, child in pairs(value) do copy[key] = Law.Copy(child) end
     return copy
 end
+-- Text from the locale tables in locales/*.lua. Placeholders are named:
+-- Law.T('ro', 'alert.shots', { area = 'Valentine' }). Unknown languages use
+-- LawConfig.DefaultLocale (server) and then English.
+function Law.Locale(lang)
+    local tables = LawLocales or {}
+    if type(lang) == 'string' and tables[lang] then return lang end
+    local default = LawConfig and LawConfig.DefaultLocale
+    if type(default) == 'string' and tables[default] then return default end
+    return 'en'
+end
+function Law.T(lang, key, vars)
+    local tables = LawLocales or {}
+    local text = (tables[Law.Locale(lang)] or {})[key] or (tables.en or {})[key] or key
+    if vars then
+        text = text:gsub('{(%w+)}', function(name)
+            local value = vars[name]
+            return value ~= nil and tostring(value) or '{' .. name .. '}'
+        end)
+    end
+    return text
+end

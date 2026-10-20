@@ -1,336 +1,344 @@
-# BCC Law — masterplan de portare nativă Feather
+# BCC Law — native Feather porting master plan
 
-Data: 2026-10-18. Baseline inspectat: pachetul încărcat `bcc-law` 1.1.0.
-Status actualizat: portarea runtime a început cu fundația nativă și integrarea
-inițială a dosarelor Justice. Nicio acceptanță live Feather nu este revendicată.
-Acest document nu certifică pachetul drept portare completă sau release stabil.
+Date: 2026-10-18 (status updated 2026-10-20). Baseline inspected: the uploaded
+`bcc-law` 1.1.0 package. Current state: **2.0.0-beta.1** on Feather Justice
+Contract 1 (0.3.0); see [§12](#12-status--200-beta1-2026-10-20). This document
+does not certify the package as a complete port or a stable release; the 1.0.0
+freeze happens only when the owner decides.
 
-Checkpoint: `bcc-law` 2.0.0-alpha.1 și `feather-justice` 0.1.0-alpha.1 create.
-Sursa originală este păstrată separat (vezi `docs/BASELINE.md`); 115 înregistrări
-de handler sunt inventariate în `docs/HANDLER_INVENTORY.json`. Configurația propusă
-este New Hanover / police / peace_officer, fără înregistrare sau grant automat.
-Fundația, sesiunile, filtrele Jobs/Licenses/policy și rutele pentru listare/deschidere
-dosar sunt implementate. Restul fazelor din plan rămân deschise. README-ul curent
-descrie explicit funcțiile lipsă și pașii de staging; niciun server nu a fost restartat.
+Authorized goal: keep the useful functionality and port it to Feather, without
+VORP/oxmysql dependencies, compatibility structure or APIs. No fake Core, no
+compatibility Character object and no `MySQL` shim over `DB` are built. APIs and
+data models are redesigned natively.
 
-Continuare alpha.2: Justice implementează propunerea/depunerea/dispunerea
-acuzațiilor cu snapshot istoric și lifecycle-ul mandatelor de arest, inclusiv
-expirare verificată la citire/operație. Law are acum 15 rute native, cu verificări
-de relație dosar–înregistrare și jurisdicție. Interfața MDT completă, custodia,
-sentințele și efectele financiare rămân deschise. Vezi `docs/ALPHA2_CHECKPOINT.md`.
+Reference: [Justice master plan](https://github.com/FeatherFramework/feather-framework-docs/blob/main/feather-justice/Feather_Justice_Master_Plan.md).
+This plan is local and kept for review; it is not published in the documentation
+repository. Recommended destination when published: `bcc-law/BCC_LAW_MASTER_PLAN.md`
+in `FeatherFramework/feather-framework-docs`; a link can then replace this copy.
 
-Obiectiv autorizat: păstrarea funcționalităților utile și portarea la Feather,
-fără dependențe, structură de compatibilitate sau API-uri VORP/oxmysql. Nu se
-construiește un Core fals, un obiect Character de compatibilitate sau un shim
-`MySQL` peste `DB`. API-urile și modelele de date se reproiectează nativ.
+## 1. Baseline and verifiable findings (2026-10-18)
 
-Referință: [Justice masterplan](https://github.com/FeatherFramework/feather-framework-docs/blob/main/feather-justice/Feather_Justice_Master_Plan.md).
-Plan local, creat pentru revizuire; nu este publicat în repository-ul de documentație.
-Destinația recomandată la publicare: `bcc-law/BCC_LAW_MASTER_PLAN.md` în
-`FeatherFramework/feather-framework-docs`; aici poate rămâne un link ulterior.
+- The manifest declared VORP Core/Character/Inventory, oxmysql, the old Menu,
+  bcc-utils, Society and Mailbox. `server/init.lua` also required `bcc-job-alerts`
+  without declaring it in the manifest.
+- The client used `feather-menu2`, different from the declared `feather-menu`
+  dependency and from the current Feather resource `feather-menu-v2`.
+- `client/mdtMenu.lua` and `client/penalcodeMenu.lua` existed but were not loaded
+  by the manifest; the active UI also included a separate Vue MDT. Parity is not
+  claimed for files only because they exist on disk.
+- `server/server.lua` had 2,961 lines and the main client 1,706. The split follows
+  responsibilities, not the old monolith.
+- There were direct queries into `characters`, `horses`, `bcchousing`, `bcc_shops`,
+  `bcc_society`, rank tables and bank accounts.
+- `controllers/ledger.lua` changed the Society ledger and bank balances directly.
+  Fines also used `removeCurrency`; all of these paths are removed.
+- Persistent identity was the pair platform identifier + numeric character, which
+  does not match Feather Character UUIDs.
+- Time and work reductions were triggered by the client (`TakeTime`,
+  `UpdateService`), and a jailbreak deleted the jail record. These semantics are
+  not ported: time, progress, escape and release need authoritative server checks.
+- Case evidence was mostly descriptive records, not a chain of custody for
+  Inventory instances.
+- The package had no Git repository of its own and no proven baseline branch or
+  tag. The GPL-3.0 license and attribution are kept.
 
-## 1. Baseline și constatări verificabile
+## 2. Data owners
 
-- Manifestul declară VORP Core/Character/Inventory, oxmysql, vechiul Menu,
-  bcc-utils, Society și Mailbox. `server/init.lua` cere și `bcc-job-alerts`,
-  fără dependență declarată în manifest.
-- Clientul folosește `feather-menu2`, diferit de dependența declarată
-  `feather-menu` și de resursa Feather curentă `feather-menu-v2`.
-- `client/mdtMenu.lua` și `client/penalcodeMenu.lua` există, dar nu sunt încărcate
-  de manifest; UI activ include și un MDT Vue separat. Nu se declară paritate
-  pentru fișiere doar pentru că există pe disc.
-- `server/server.lua` are 2.961 linii; clientul principal 1.706. Separarea pe
-  servicii va urmări responsabilitățile, nu păstrarea unui monolit.
-- Există interogări directe în `characters`, `horses`, `bcchousing`,
-  `bcc_shops`, `bcc_society`, tabele de ranguri și conturi bancare.
-- `controllers/ledger.lua` modifică direct ledger-ul Society și solduri bancare.
-  Amenzile mai folosesc și `removeCurrency`; toate aceste trasee se elimină.
-- Identitatea persistentă este perechea identificator platformă + personaj numeric.
-  Nu corespunde UUID-urilor Character din Feather.
-- Există scăderi de timp/muncă declanșate de client (`TakeTime`, `UpdateService`)
-  și jailbreak care șterge înregistrarea închisorii. Aceste semantici nu se portă:
-  timpul, progresul, evadarea și eliberarea necesită validare server autoritară.
-- Probele actuale din dosare sunt în principal înregistrări descriptive;
-  nu reprezintă deja un chain-of-custody pentru instanțe Inventory.
-- Pachetul nu are repository Git propriu. Nu există branch/tag de baseline
-  demonstrat. Licența GPL-3.0 și atribuirea se păstrează.
-
-## 2. Proprietarii datelor
-
-| Concern | Proprietar | Rol BCC Law |
+| Concern | Owner | BCC Law role |
 |---|---|---|
-| Sesiune, cont, actor curent | Core | Rezolvă identitatea server-side |
-| Profil/căutare persoană | Character | Consumă contract public cu limite și autorizare |
-| Organizația departamentului | Organizations | Configurează referințe UUID validate |
-| Angajare, grade, duty, job activ | Jobs; Society pentru angajările administrate de Society | Citește fapte; cere operații proprietarului |
-| Comisie/calificare profesională | Licenses | Verifică prin contract public |
-| Puteri de serviciu | Authority prin Core policy | Aplică acțiuni numite și scope de jurisdicție |
-| Cod penal, dosare, părți, acuzații, mandate | Justice | Interfață și orchestrare |
-| Citări, autoritate de custodie, hotărâri, sentințe | Justice | Coordonează efectele fizice |
-| Obligație financiară | Contracts | Afișează și solicită operația legal autorizată |
-| Sold, plăți și trezorerie | Economy | Consumă exclusiv API-uri |
-| Salarii și fonduri Society | Society + Economy | Un singur traseu de payroll, fără acumulare dublă |
-| Iteme, armurerie, confiscări | Inventory; Weapons pentru identitatea/politica armelor | Validează interacțiunea și custodia |
-| Proprietăți și interese | Property | Afișează numai rezultate autorizate |
-| Cai, căruțe și bărci deținute | Assets | Verifică asset-ul exact, nu doar modelul |
-| Acces delegat persistent | Access | Consumă integrarea atunci când este disponibilă |
-| Moarte și recuperare | Medical | Suspendă/reevaluează interacțiunile |
-| Uși și starea încuietorilor | bcc-doorlocks | Cere operații prin API și păstrează un singur proprietar |
-| Interacțiuni, locații, UI, animații, NPC | BCC Law | Proprietar direct |
-| Audit transversal | Audit | Publică fapte revizuite prin outbox durabil |
+| Session, account, current actor | Core | Resolves identity on the server |
+| Person profile and search | Character | Consumes a public, bounded, authorized contract |
+| Department organization | Organizations | Configures validated UUID references |
+| Employment, grades, duty, active job | Jobs; Society for Society-managed employment | Reads facts; asks the owner for operations |
+| Commission / professional qualification | Licenses | Verifies through a public contract |
+| Service powers | Authority through Core policy | Applies named actions and jurisdiction scope |
+| Penal code, cases, parties, charges, warrants | Justice | Interface and orchestration |
+| Citations, custody authority, rulings, sentences | Justice | Coordinates the physical effects |
+| Financial obligation | Contracts | Shows it and requests the legally authorized operation |
+| Balances, payments and treasury | Economy | Consumed only through APIs |
+| Salaries and Society funds | Society + Economy | One payroll path, no double accrual |
+| Items, armory, seizures | Inventory; Weapons for weapon identity and policy | Validates the interaction and custody |
+| Properties and interests | Property | Shows authorized results only |
+| Owned horses, wagons and boats | Assets | Verifies the exact asset, not just the model |
+| Persistent delegated access | Access | Consumes the integration when available |
+| Death and recovery | Medical | Suspends / re-evaluates interactions |
+| Doors and lock state | bcc-doorlocks | Requests operations through its API, one owner |
+| Interactions, locations, UI, animations, NPCs | BCC Law | Direct owner |
+| Cross-cutting audit | Audit | Publishes reviewed facts through a durable outbox |
 
-Justice nu deține animații, teleporte sau simularea închisorii. BCC Law nu
-deține o a doua bază de dosare sau un al doilea registru de datorii.
-Calitatea de angajat nu acordă implicit orice putere juridică; calificarea,
-permisiunea, jurisdicția și condițiile domeniului sunt verificări distincte.
+Justice owns no animations, teleports or jail simulation. BCC Law owns no second
+case database and no second debt ledger. Being employed does not by itself grant
+every legal power; qualification, permission, jurisdiction and domain conditions
+are separate checks.
 
-## 3. Inventarul funcțional și destinația
+## 3. Feature inventory and destination
 
-| Funcție existentă | Decizie și criteriu de păstrare |
+| Existing feature | Decision and keep criterion |
 |---|---|
-| MDT Vue, dashboard, profil persoană | Păstrăm prezentarea; payload-uri noi, paginate și filtrate pe server |
-| Meniuri de teren și controale | Refacem cu exporturile Menu v2; fără adaptor al vechiului Menu |
-| Cod penal configurabil/editor | Definiții și revizii Justice; recomandările nu sunt pedepse automate |
-| Dosare, suspecți, ofițeri, acuzații, note | Justice; snapshot istoric al infracțiunii și autorului |
-| Mandate și închidere mandat | Lifecycle Justice explicit: servit, revocat, expirat etc. |
-| Calcul amendă și durată | Propunere calculată server-side; aplicarea cere autoritate și motiv |
-| Sentință combinată amendă/închisoare | Hotărâre/sentință Justice + workflow durabil, fără efecte parțiale ascunse |
-| Amendă imediată, factură, plata facturii | Citare Justice + obligație Contracts + settlement Economy |
-| Item factură | Reprezentare Inventory opțională a obligației, fără valoare monetară autoritară în metadata |
-| Jail automat/manual, revenire la conectare | Execution BCC Law legat de custodie/sentință Justice |
-| Reducere timp, jailbreak, eliberare | Server autoritar; evadarea nu șterge sentința |
-| Community service | Sentință Justice; task-uri, validare și progres fizic BCC Law |
-| Cătușe, chei, lockpick, escortă, wagon | Păstrăm mecanicile; ținte apropiate, sesiuni curente, state-machine server |
-| Percheziție și confiscare | Inventory + autoritate juridică + restraint verificabil; fără transfer arbitrar din client |
-| Armurerie, muniție, commissary | Config server allowlist; Inventory/Weapons; grant idempotent, limite și audit |
-| Joburi multiple, duty, payroll, ledger | Jobs/Society/Economy; eliminăm prefixele off și SQL străin |
-| Verificare vehicul/mount | Assets și asociere verificabilă entity–asset; hash-ul modelului nu dovedește ownership |
-| Uși de secție/celule | Integrare bcc-doorlocks; fără două bucle de control asupra aceleiași uși |
-| Badge, blips, NPC, witness, alerte | BCC Law + Toolkit/Notify; lifecycle și cleanup pe owner |
-| Scrisori și remindere | Opțional, numai după verificarea providerului Mailbox; nu blochează emiterea datoriei |
-| Webhook-uri | Audit/redacție; fără secrete în config shared sau payload client |
-| Localizare română/engleză/germană | Migrare în registrul locale Core; păstrăm sensul și traducerile |
+| Vue MDT, dashboard, person profile | Keep the presentation; new payloads, paginated and filtered on the server |
+| Field menus and controls | Rebuilt with Menu v2 exports; no adapter for the old Menu |
+| Configurable penal code / editor | Justice definitions and revisions; recommendations are never automatic punishments |
+| Cases, suspects, officers, charges, notes | Justice; historical snapshot of the offence and the author |
+| Warrants and closing a warrant | Explicit Justice lifecycle: served, recalled, expired, etc. |
+| Fine and duration calculation | Server-calculated proposal; applying it needs authority and a reason |
+| Combined fine / jail sentence | Justice ruling/sentence + durable workflow, no hidden partial effects |
+| Instant fine, bill, bill payment | Justice citation + Contracts obligation + Economy settlement |
+| Bill item | Optional Inventory representation of the obligation, without authoritative money in metadata |
+| Automatic/manual jail, return on connect | BCC Law execution tied to Justice custody/sentence |
+| Time reduction, jailbreak, release | Server-authoritative; escape never deletes the sentence |
+| Community service | Justice sentence; BCC Law tasks, validation and physical progress |
+| Cuffs, keys, lockpick, escort, wagon | Keep the mechanics; nearby targets, current sessions, server state machine |
+| Search and seizure | Inventory + legal authority + verifiable restraint; no arbitrary transfer from the client |
+| Armory, ammunition, commissary | Server allowlist config; Inventory/Weapons; idempotent grant, limits and audit |
+| Multiple jobs, duty, payroll, ledger | Jobs/Society/Economy; remove the "off" prefixes and foreign SQL |
+| Vehicle/mount check | Assets and a verifiable entity–asset link; a model hash does not prove ownership |
+| Station / cell doors | bcc-doorlocks integration; never two control loops over one door |
+| Badge, blips, NPCs, witness, alerts | BCC Law + Toolkit/Notify; lifecycle and cleanup by the owner |
+| Letters and reminders | Optional, only after the Mailbox provider is verified; never blocks issuing the debt |
+| Webhooks | Audit/redaction; no secrets in shared config or client payloads |
+| Romanian/English/German localization | Migrate to locale tables; keep the meaning and translations |
 
-Meniurile alternative neîncărcate trebuie clasificate ca înlocuite sau necesare
-după inventarul ecranelor. Nu se lasă implementări vechi inactive în produsul final.
+Alternative menus that were not loaded must be classified as replaced or needed
+after the screen inventory. Old inactive implementations are not left in the final product.
 
-## 4. Dependențe și coordonare
+## 4. Dependencies and coordination
 
-Baseline disponibil local: Core, MySQL, Character, Jobs, Organizations, Authority,
-Contracts, Economy, Inventory, Weapons, Medical, Property, Assets, Menu v2,
-Toolkit, Notify, Audit, Society și Doorlocks. Prezența nu certifică toate API-urile.
+Baseline available locally: Core, MySQL, Character, Jobs, Organizations, Authority,
+Contracts, Economy, Inventory, Weapons, Medical, Property, Assets, Menu v2, Toolkit,
+Notify, Audit, Society and Doorlocks. Presence does not certify every API.
 
-- Justice nu este implementat în workspace la această inspecție. Îi cerem
-  contractele pe felii: jurisdicții/statute, dosare/părți, acuzații/mandate,
-  citări, custodie, sentințe, probe și acces la înregistrări.
-- Licenses este în lucru cu alt AI, conform proprietarului. Nu modificăm acel
-  domeniu și nu inventăm nume de exporturi. Convenim check-ul calificării,
-  issuer authority, status/expiry, offline subjects, readiness și erori.
-- Access este la Savsin. Nu duplicăm granturile persistente în BCC Law.
-- Character: verificăm existența unei căutări privilegiate paginate, deoarece
-  providerul inspectat anterior nu publica `SearchProfiles`. Extinderea aparține Character.
-- Society: inventariem exporturile actuale pentru membership, management și
-  payroll. Lipsa unui export se rezolvă la owner; nu justifică SQL din BCC Law.
-- Evidence: Inventory folosește local ID numeric de item; masterplanul Justice
-  presupune UUID. Convenim o referință stabilă versionată înainte de schema linkurilor.
-- Assets: nu avem încă dovada unui contract public entity–asset. Verificarea
-  ownership-ului unui mount rămâne indisponibilă până se poate stabili identitatea exactă.
-- bcc-job-alerts, Mailbox și minigame-urile trebuie inspectate separat. Niciunul
-  nu este presupus compatibil doar fiindcă numele începe cu bcc.
+- Justice was not implemented in the workspace at that inspection. Its contracts
+  were requested in slices: jurisdictions/statutes, cases/parties,
+  charges/warrants, citations, custody, sentences, evidence and record access.
+- Licenses is worked on by another maintainer. That domain is not modified and no
+  export names are invented. Agree the qualification check, issuer authority,
+  status/expiry, offline subjects, readiness and errors.
+- Access belongs to SavSin. Persistent grants are not duplicated in BCC Law.
+- Character: verify a privileged paginated search exists; the provider inspected
+  earlier did not publish `SearchProfiles`. Extending it belongs to Character.
+- Society: inventory the current exports for membership, management and payroll.
+  A missing export is solved with the owner; it never justifies SQL from BCC Law.
+- Evidence: Inventory uses a local numeric item ID while the Justice master plan
+  assumes a UUID. Agree a stable versioned reference before the link schema.
+- Assets: there is no proof yet of a public entity–asset contract. Mount ownership
+  checks stay unavailable until the exact identity can be established.
+- bcc-job-alerts, Mailbox and the minigames are inspected separately. None is
+  assumed compatible because its name starts with bcc.
 
-Nu adăugăm dependențe circulare Justice–Law sau Core–gameplay. Law așteaptă
-bounded readiness a funcțiilor necesare. Modulele opționale indisponibile sunt
-ascunse/raportate explicit; acțiunile protejate nu au fallback permisiv.
+No circular Justice–Law or Core–gameplay dependencies. Law waits with bounded
+readiness for the functions it needs. Unavailable optional modules are hidden or
+reported explicitly; protected actions have no permissive fallback.
 
-## 5. Contractul nativ BCC Law — proiectare propusă
+## 5. Native BCC Law contract — proposed design
 
-- Exporturi operaționale: `GetHealth`, `GetCapabilities`, `AwaitReady`; schema
-  exactă se fixează înainte de implementare. Capabilities declară doar funcții sănătoase.
-- Rute noi `law.<operation>.v1`, cu `{ ok, value }` sau `{ ok=false, code,
-  message, details? }`. Lista exactă se generează din inventarul fiecărui handler.
-- NUI primește o listă explicită de operații și snapshot-uri de prezentare;
-  nu poate selecta exportul, resursa, actorul sau autoritatea serviciului.
-- Actorul vine din sesiunea Core; ținta UUID este intrare validată, niciodată
-  dovadă de acces. Source ID este numai adresă de transport.
-- Fiecare mutație definește acțiune policy, duty, jurisdicție, calificare,
-  grade dacă sunt relevante, target rules, limite, rate limit și idempotency scope.
-- Cererile delayed leagă actor session, target session unde este cazul,
-  request ID și revision; se reevaluează după yield și înaintea efectului.
-- `service unavailable` refuză acțiunea; nu se reutilizează un răspuns pozitiv
-  expirat drept autorizare pentru o mutație nouă.
-- Textul juridic se afișează ca text sigur; căutările și listele au limite și
-  cursori. Dosarele confidențiale sunt filtrate în serviciul autoritar.
-- Interacțiunile de teren verifică distanță și stare server-side; tokenurile
-  de animație/minigame sunt unice, limitate și nu acordă singure autoritate.
+- Operational exports: `GetHealth`, `GetCapabilities`, `AwaitReady`; the exact
+  schema is fixed before implementation. Capabilities declare only healthy functions.
+- New routes `law.<operation>.v1`, returning `{ ok, value }` or
+  `{ ok=false, code, message, details? }`. The exact list follows the handler inventory.
+- The NUI receives an explicit list of operations and presentation snapshots; it
+  cannot choose the export, the resource, the actor or the service authority.
+- The actor comes from the Core session; a target UUID is validated input, never
+  proof of access. A source ID is only a transport address.
+- Each mutation defines its policy action, duty, jurisdiction, qualification,
+  grades where relevant, target rules, limits, rate limit and idempotency scope.
+- Delayed requests bind the actor session, the target session where relevant, the
+  request ID and the revision; they are re-evaluated after a yield and before the effect.
+- `service unavailable` refuses the action; an expired positive answer is never
+  reused as authorization for a new mutation.
+- Legal text is shown as safe text; searches and lists have limits and cursors.
+  Confidential cases are filtered in the authoritative service.
+- Field interactions check distance and state on the server; animation/minigame
+  tokens are single-use, limited, and never grant authority by themselves.
 
-## 6. Persistență și workflow-uri
+## 6. Persistence and workflows
 
-Tabele BCC Law propuse (nume de lucru): `bcc_law_schema_migrations`,
+Proposed BCC Law tables (working names): `bcc_law_schema_migrations`,
 `bcc_law_operations`, `bcc_law_execution_sessions`, `bcc_law_service_progress`,
-`bcc_law_outbox`. Schema și indexurile se finalizează înainte de prima migrare.
+`bcc_law_outbox`. The schema and indexes are finalized before the first migration.
 
-Law păstrează doar intent-ul/reconcilierea interacțiunii și execuția gameplay.
-Nu păstrează solduri, liste canonice de mandate, datorii sau sentințe concurente
-cu proprietarii. Legături: UUID Justice/Contracts/Organizations și referințe
-Inventory conforme contractului convenit. Timestamp-uri UTC, migrații checksummed.
+Law keeps only the intent/reconciliation of an interaction and the gameplay
+execution. It keeps no balances, canonical warrant lists, debts or sentences that
+compete with their owners. Links: Justice/Contracts/Organizations UUIDs and
+Inventory references following the agreed contract. UTC timestamps, checksummed migrations.
 
-Workflow amendă: autoritate + interacțiune → citare Justice → obligație Contracts
-→ plata prin Contracts/Economy. Se decide un singur orchestrator pentru emiterea
-obligației; Law nu o emite din nou dacă Justice o coordonează deja. Lipsa banilor
-lasă datorie legală, nu produce debit direct sau sold negativ.
+Fine workflow: authority + interaction → Justice citation → Contracts obligation →
+payment through Contracts/Economy. A single orchestrator issues the obligation;
+Law does not issue it again when Justice already coordinates it. Missing money
+leaves a legal debt; it never produces a direct debit or a negative balance.
 
-Workflow sentință: Justice confirmă hotărârea → Law rezervă execuția → livrează
-booking/teleport actualei sesiuni → confirmă sau reconciliază rezultatul. Reconnect
-reconstruiește din sentința autoritară și progres; nu reîncepe pedeapsa accidental.
-Politica timpului offline și cumulul/reducerea sentințelor se decid explicit.
+Sentence workflow: Justice confirms the ruling → Law reserves the execution →
+delivers booking/teleport to the current session → confirms or reconciles the
+result. A reconnect rebuilds from the authoritative sentence and progress; it never
+restarts the punishment by accident. The offline time policy and the
+cumulation/reduction of sentences are decided explicitly.
 
-Workflow probe: Inventory confirmă transferul/hold-ul → Justice leagă referința
-→ operația Law se finalizează. La rezultat incert se caută operația originală.
-Ștergerea/consumarea probelor legate necesită guard sau dispoziție imuabilă,
-convenite cu Inventory/Weapons; niciodată SQL peste tabelele lor.
+Evidence workflow: Inventory confirms the transfer/hold → Justice links the
+reference → the Law operation completes. On an uncertain result the original
+operation is looked up. Deleting or consuming linked evidence needs a guard or an
+immutable disposition, agreed with Inventory/Weapons; never SQL over their tables.
 
-Fiecare workflow are owner de retry, stări pending/confirmed/rejected/unknown,
-chei stabile, recuperare după restart și comandă read-only de reconciliere.
-Nu declarăm tranzacție atomică peste mai multe resurse. Pierderea reply-ului
-nu permite o nouă amendă, plată, armă, reducere de timp sau sentință.
+Every workflow has a retry owner, pending/confirmed/rejected/unknown states, stable
+keys, recovery after a restart and a read-only reconciliation command. No atomic
+transaction across several resources is claimed. A lost reply never allows a new
+fine, payment, weapon, time reduction or sentence.
 
-## 7. Schema existentă și cutover
+## 7. Existing schema and cutover
 
-| Sursa actuală | Destinație |
+| Current source | Destination |
 |---|---|
-| `bcc_law_penal_codes` | Statute Justice versionate |
-| `bcc_law_cases`, `case_suspects`, `case_officers` | Cases și parties Justice |
-| `bcc_law_case_charges` | Charges + snapshot infracțiune Justice |
-| `bcc_law_case_notes`, `case_evidence` | Note/probe descriptive Justice; nu inventăm iteme fizice |
-| `bcc_law_warrants` | Warrants Justice; mapare explicită status open/closed |
-| `bcc_law_bills` | Citări Justice + obligații Contracts; plățile istorice au proveniență |
-| `bcc_law_jail` | Custodie/sentințe Justice + execuție Law |
-| `bcc_law_communityservice` | Sentință Justice + progres Law |
-| `bcc_law_mdt_logs` | Istoric protejat/importat; audit nou via outbox/Audit |
-| `characters`, Society, Banks, Horses, Housing, Shops SQL | Eliminat; API-uri ale ownerilor |
+| `bcc_law_penal_codes` | Versioned Justice statutes |
+| `bcc_law_cases`, `case_suspects`, `case_officers` | Justice cases and parties |
+| `bcc_law_case_charges` | Justice charges + offence snapshot |
+| `bcc_law_case_notes`, `case_evidence` | Descriptive Justice notes/evidence; no physical items invented |
+| `bcc_law_warrants` | Justice warrants; explicit open/closed status mapping |
+| `bcc_law_bills` | Justice citations + Contracts obligations; historical payments keep provenance |
+| `bcc_law_jail` | Justice custody/sentences + Law execution |
+| `bcc_law_communityservice` | Justice sentence + Law progress |
+| `bcc_law_mdt_logs` | Protected/imported history; new audit through outbox/Audit |
+| `characters`, Society, Banks, Horses, Housing, Shops SQL | Removed; owners' APIs |
 
-Înainte de cutover: inventar date reale și backup, alegere clean install sau
-import. Nu presupunem că încărcarea folderului înseamnă existența tabelelor.
-Un import necesită mapare explicită numeric personaj → UUID, reconciliere de
-numere/statusuri/sume și oprirea writerilor vechi. Nu se fac UUID-uri din ID-uri
-numerice și nu se șterg datele de producție automat.
+Before cutover: inventory the real data and back it up, choose a clean install or
+an import. Loading the folder does not mean the tables exist. An import needs an
+explicit numeric character → UUID mapping, reconciliation of numbers, statuses and
+amounts, and stopping the old writers. UUIDs are never made from numeric IDs and
+production data is never deleted automatically.
 
-Un eventual importator istoric este unealtă separată, exclusă din runtime și
-release-ul Feather, astfel încât produsul final nu conține ramuri VORP/oxmysql.
-Păstrăm baseline-ul original ca arhivă în afara release-ului; fără repository
-upstream verificat nu pretindem branch/tag deja protejat. Nicio operație de
-push, arhivare externă sau migrare DB nu este executată prin acest plan.
+Any historical importer is a separate tool, excluded from the runtime and the
+Feather release, so the final product has no VORP/oxmysql branches. The original
+baseline is kept as an archive outside the release; without a verified upstream
+repository no protected branch or tag is claimed. This plan performs no push,
+external archive or DB migration.
 
-## 8. Structura țintă
+**Decision (2026-10-20):** clean install. No historical import; the old tables
+are not read.
+
+## 8. Target structure
 
 ```text
-config/                 departamente, jurisdicții, interacțiuni, jail, armurerie
-shared/                 results, validation, limite și DTO-uri proprii
-server/core/            lifecycle, dependency registry, policy și actor context
-server/repositories/    DOAR tabele BCC Law
+config/                 departments, jurisdictions, interactions, jail, armory
+shared/                 results, validation, limits and own DTOs
+server/core/            lifecycle, dependency registry, policy and actor context
+server/repositories/    ONLY BCC Law tables
 server/services/        workflows, interactions, custody execution, service tasks
-server/routes/          handlers Core expliciți pe funcție
-server/migrations/      migrații checksummed BCC Law
-server/main.lua         bootstrap restrâns
-client/core/            sesiune, readiness, cleanup, transport Core
+server/routes/          explicit Core handlers per feature
+server/migrations/      checksummed BCC Law migrations
+server/main.lua         narrow bootstrap
+client/core/            session, readiness, cleanup, Core transport
 client/services/        cuffs, escort, transport, jail, tasks, alerts, doors bridge
-client/menus/           API nativ Menu v2, fără initiate/RegisterMenu vechi
-client/nui/             operații MDT explicite și focus ownership
-ui/src/                 Vue MDT și DTO-uri noi
-translations/           locale Core
-tests/                  contracte, concurență, lifecycle, failure/replay
-README.md               instalare, owner config și API public
+client/menus/           native Menu v2 API, no old initiate/RegisterMenu
+client/nui/             explicit MDT operations and focus ownership
+ui/src/                 Vue MDT and new DTOs
+translations/           locales
+tests/                  contracts, concurrency, lifecycle, failure/replay
+README.md               installation, owner config and public API
 ```
 
-Nu păstrăm directoarele `controllers/jobs.lua`/`ledger.lua` ca adaptoare cu
-semnificația veche. Eliminarea lor se face după mutarea funcțiilor necesare.
-Build-ul UI trebuie să regenereze `ui/dist`, fără node_modules în release.
+The `controllers/jobs.lua` / `ledger.lua` folders are not kept as adapters with
+the old meaning; they are removed after the needed functions moved.
+The UI build must regenerate `ui/dist`, without node_modules in the release.
 
-## 9. Fazele de implementare și ieșire
+**Implemented layout (beta.1):** flat by responsibility — `server/foundation.lua`
+(lifecycle, actor, policy), `server/routes.lua` (route registration and journal),
+`server/store.lua` (the only module touching Law tables, versioned migrations),
+one file per feature (`legal_routes`, `custody`, `restraints`, `search`,
+`evidence`, `court`, `execution`, `armory`, `doors`, `alerts`, `setup`,
+`acceptance`), `locales/` for translations and a dependency-free MDT in `ui/`
+(no build step). Field interactions are MDT forms and chat commands; Menu v2 field
+menus remain open (§12).
 
-| Fază | Livrabil | Criteriu de închidere |
+## 9. Implementation phases and exit criteria
+
+| Phase | Deliverable | Exit criterion |
 |---|---|---|
-| LAW0 — inventar/contract | Feature map, lista tuturor handlerilor, date reale, matrice autoritate | Scop v1 și contractele consumate acceptate; niciun API presupus |
-| LAW1 — fundație | Manifest nativ, Core/MySQL, lifecycle, config, locale, diagnostics | Start curat; failed/degraded corect; fără wrapper VORP/oxmysql |
-| LAW2 — duty/organizații | Jobs, Licenses, Authority și Society pentru operații deținute de Society | Multi-employer, schimbare duty/rol/calificare și refuzuri testate |
-| LAW3 — teren/UI | Toolkit, Menu v2, Notify, cuffs, escort, transport, badge, focus | Două sesiuni reale; distanță, cleanup, moarte, disconnect și restart |
-| LAW4 — MDT/Justice | Jurisdicții, statute, dosare, părți, acuzații, mandate | Date doar din Justice; privacy, stale revision și retry testate |
-| LAW5 — financiar | Citări, Contracts, Economy, item document, payroll unic | Fără dublă plată/emitere; timeout/restart/offline cu aceleași ID-uri |
-| LAW6 — jail/service | Sentințe/custodie Justice, booking și progres server Law | Offline policy, evadare, task replay și eliberare verificate |
-| LAW7 — bunuri/probe | Inventory/Weapons, Assets, Property, Doorlocks, Access când disponibil | Custodie și acces corecte; fără SQL străin; transfer/hold/revocare |
-| LAW8 — audit/cutover | Producer schemas, outbox, import separat dacă necesar | Recovery/reconciliere, writer unic, inventar legacy zero în produs |
-| LAW9 — release | README, pachet runtime, compatibilitate, acceptance report | Instalare curată și upgrade/restart; toate feature-urile declarate demonstrate |
+| LAW0 — inventory/contract | Feature map, list of all handlers, real data, authority matrix | v1 scope and consumed contracts accepted; no assumed API |
+| LAW1 — foundation | Native manifest, Core/MySQL, lifecycle, config, locale, diagnostics | Clean start; correct failed/degraded; no VORP/oxmysql wrapper |
+| LAW2 — duty/organizations | Jobs, Licenses, Authority and Society for Society-owned operations | Multi-employer; duty/role/qualification changes and refusals tested |
+| LAW3 — field/UI | Toolkit, Menu v2, Notify, cuffs, escort, transport, badge, focus | Two real sessions; distance, cleanup, death, disconnect and restart |
+| LAW4 — MDT/Justice | Jurisdictions, statutes, cases, parties, charges, warrants | Data only from Justice; privacy, stale revision and retry tested |
+| LAW5 — financial | Citations, Contracts, Economy, document item, single payroll | No double payment/issue; timeout/restart/offline with the same IDs |
+| LAW6 — jail/service | Justice sentences/custody, booking and Law server progress | Offline policy, escape, task replay and release verified |
+| LAW7 — property/evidence | Inventory/Weapons, Assets, Property, Doorlocks, Access when available | Correct custody and access; no foreign SQL; transfer/hold/revocation |
+| LAW8 — audit/cutover | Producer schemas, outbox, separate import if needed | Recovery/reconciliation, single writer, zero legacy inventory in the product |
+| LAW9 — release | README, runtime package, compatibility, acceptance report | Clean install and upgrade/restart; every declared feature demonstrated |
 
-Fazele nu autorizează modificarea implicită a domeniilor lucrate de alți AI.
-Blocajele de provider sunt documentate; nu se construiesc substitute locale.
-Nu se declară Law portat complet doar pentru că pornește sau se deschide MDT.
+The phases do not implicitly authorize changing domains worked on by other
+maintainers. Provider blockers are documented; no local substitutes are built.
+Law is not declared fully ported only because it starts or the MDT opens.
 
-## 10. Acceptanță obligatorie
+## 10. Mandatory acceptance
 
-- Static: toate fișierele manifest există, ordinea este verificată, fără dublări;
-  nicio referință runtime/config/UI la VORP, oxmysql, bcc-utils, feather-menu2,
-  vechiul Menu sau evenimentul de selectare a personajului din framework-ul vechi.
-- Nu există identități Steam/charidentifier în DTO-urile noi, prefix off ca job,
-  add/removeCurrency, SQL Characters/Society/Banks/Horses sau fallback de tabel bancar.
-- Validare syntax/Lua, build UI, result envelopes, rate limits, limite payload,
-  paginare, duplicate/conflict, stale session și source reuse.
-- Migrare first-run/rerun/checksum/failure; rollback tranzacție; operații
-  concurente pe aceeași amendă, probă, sentință și interacțiune.
-- Negativ: fără job, off duty, grad insuficient unde este cerut, licență expirată,
-  jurisdicție greșită, provider oprit, target la distanță, cerere fabricată din client.
-- Jail/service: spam-ul TakeTime/UpdateService nu reduce pedeapsa, jailbreak
-  nu o șterge, task completat anterior nu poate fi contabilizat din nou.
-- Restart Law/Core/Justice/Inventory și pierdere răspuns după commit: reconciliere,
-  fără duplicare și fără succes fals. Medical recovery nu șterge sentința.
-- MDT: drepturi pe înregistrare, date sigilate, notes/probe sensibile, text sigur,
-  răspuns întârziat după logout, Escape/focus, 1080p/1440p/ultrawide.
-- Două persoane: cuffs/escort/search, acces refuzat, mandat/citare, booking,
-  confiscare și reconectare; mock-urile nu închid acceptanța nativă/multiplayer.
-- Smoke read-only propus: `LawReleaseContractSmokeTest`; fixture-urile care
-  modifică date sunt explicit development-only și excluse din release config.
-- Raport final: versiuni exacte de dependențe, comenzi, PASS/FAIL, date, limite,
-  gates amânate. Nu se reutilizează dovezi VORP ca dovadă Feather.
+- Static: every manifest file exists, the order is verified, no duplicates; no
+  runtime/config/UI reference to VORP, oxmysql, bcc-utils, feather-menu2, the old
+  Menu or the old framework's character-selection event.
+- No Steam/charidentifier identities in the new DTOs, no "off" job prefix, no
+  add/removeCurrency, no Characters/Society/Banks/Horses SQL and no bank-table fallback.
+- Lua syntax, UI build, result envelopes, rate limits, payload limits, pagination,
+  duplicates/conflicts, stale session and source reuse.
+- Migration first run/rerun/checksum/failure; transaction rollback; concurrent
+  operations on the same fine, evidence, sentence and interaction.
+- Negative: no job, off duty, insufficient grade where required, expired license,
+  wrong jurisdiction, stopped provider, distant target, fabricated client request.
+- Jail/service: spamming TakeTime/UpdateService does not reduce the punishment, a
+  jailbreak does not delete it, a task completed earlier cannot be counted again.
+- Restart of Law/Core/Justice/Inventory and a reply lost after commit:
+  reconciliation, no duplicates and no false success. Medical recovery does not
+  delete the sentence.
+- MDT: per-record rights, sealed data, sensitive notes/evidence, safe text, late
+  reply after logout, Escape/focus, 1080p/1440p/ultrawide.
+- Two people: cuffs/escort/search, refused access, warrant/citation, booking,
+  seizure and reconnect; mocks do not close native/multiplayer acceptance.
+- Read-only smoke test: `LawReleaseContractSmokeTest`; fixtures that change data
+  are explicitly development-only and excluded from the release config.
+- Final report: exact dependency versions, commands, PASS/FAIL, data, limits,
+  postponed gates. VORP evidence is never reused as Feather evidence.
 
-## 11. Decizii încă deschise
+## 11. Decisions
 
-1. Prima jurisdicție și cine administrează statutele; permisiuni officer/judge.
-2. Politica mandatelor, arestului fără mandat și motivelor de eliberare.
-3. Beneficiarul amenzilor: sistem sau trezorerie de organizație; plăți parțiale
-   numai dacă sunt suportate explicit de contractele reale.
-4. Decizie utilizator 2026-10-19: timpul sentinței continuă offline, folosind
-   deadline-ul UTC autoritar Justice. Cumulul și efectul evadării/community service rămân deschise.
-5. Contractul calificărilor Licenses și membership/payroll Society.
-6. Dovezi Inventory: identitate, holds, mutare, consum/distrugere și redacție.
-7. Clean install versus import; retenție, dosare sigilate și expungement.
-8. Consumator independent suplimentar pentru validarea Justice. Modulele MDT/Jail
-   din Law oferă scenarii utile, dar nu sunt două resurse independente. Nu creăm
-   artificial încă un produs; raportăm separat acest gate din masterplanul Justice.
-9. Alerte/Mailbox/minigame: provider compatibil, opționalitate și failure semantics.
+1. First jurisdiction and statute administration: **decided** — `bcc-law:new_hanover`
+   (county), registered by console; judges manage the penal code in the MDT.
+   Officer = on-duty `police` + `peace_officer`; judge = `judge` + `judicial_commission`.
+2. Warrant policy, arrest without a warrant, release reasons: **decided** — arrest
+   needs an active arrest warrant or an active custodial order; Justice lawful
+   exceptions stay disabled (Justice team decision 5). Search and seizure warrants
+   are issued by judges. Release reasons are a fixed list in the MDT.
+3. Fine beneficiary: system creditor through Contracts (Justice), restitution to
+   the named character. Partial payments only if Contracts supports them explicitly.
+4. User decision 2026-10-19: sentence time **continues offline**, using the
+   authoritative Justice UTC deadline. Escape does not change the sentence (the
+   subject is returned to the cell). Cumulation: one active custodial sentence per
+   character (Justice). Community service counts only units observed on site.
+5. Licenses qualification contract: empty version-1 scope only, until Licenses
+   publishes a scope vocabulary. Payroll belongs to Society/Jobs/Economy; Law has none.
+6. Inventory evidence: instance IDs as decimal strings; a Justice destroy guard while
+   linked; return/destruction executed by Inventory only after the Justice
+   disposition record (`ReturnLawEvidence`, `DestroyLawEvidence`).
+7. Clean install (no import); sealed cases and expungement through Justice.
+8. Additional independent consumer for validating Justice: reported separately as a
+   Justice gate; not created artificially here.
+9. Alerts: built on Core notifications and native blips; Mailbox reminders and
+   minigames stay optional and are not implemented.
 
-## 12. Stadiul curent și următorul pas — alpha.8
+## 12. Status — 2.0.0-beta.1 (2026-10-20)
 
-Actualizare alpha.6 (2026-10-19): cuffs/escort native, cu mandat activ, policy
-explicit, distanță/session guards și cleanup; 34 rute. Justice este lucrat separat
-de Claude și nu a fost modificat în această felie. Timpul sentinței va continua
-offline conform deciziei utilizatorului. Contractul de sentințe Justice nu există
-încă în providerul inspectat; jail nu este declarat implementat.
-Vezi `docs/ALPHA6_CHECKPOINT.md` pentru limite și gates deschise.
+bcc-law consumes Justice Contract 1 0.3.0 exactly (operation names, flat
+snapshots, capability document `feather.justice` v1). The MDT and all texts are in
+English with a Romanian translation, chosen by the player's Core account language.
 
-LAW1 și integrarea LAW2 există ca implementare nativă; acceptanța live rămâne deschisă.
-LAW4 include dosare, participanți, acces pe dosar, acuzații, mandate de arestare și
-MDT nativ. Nu echivalează cu închiderea fazei: lipsesc baza reală, concurența,
-politicile finale, privacy avansat și sesiunile multiplayer.
+| Phase | State | Evidence and remaining gate |
+|---|---|---|
+| LAW0 | Done | Handler inventory (`docs/HANDLER_INVENTORY.json`), owners table, consumed contracts |
+| LAW1 | Done | Native manifest, bounded readiness, config validation, locales, smoke test |
+| LAW2 | Done (beta) | Jobs duty + Licenses commission per action (officer / judge / either); multi-employer through `employerId`; Society payroll owned elsewhere |
+| LAW3 | Implemented | Restraint, escort, search, alerts, blips; MDT forms and commands. Open: Menu v2 field menus, badge/NPC, two-player in-game acceptance |
+| LAW4 | Done (beta) | Cases, parties, charges, warrants, statutes, penal-code editor, sealing/expunging, history; real-DB tests |
+| LAW5 | Done (beta) | Warnings and fines through Justice + Contracts; own-wallet payment (`/lawfines`). Payroll: owned by Society/Jobs |
+| LAW6 | Done (beta) | Arrest → booking → release; UTC jail placement and return after escape; offline term; community-service units → Justice |
+| LAW7 | Done (beta) | Evidence collection, Justice link and guard, physical return/destruction after the disposition; armory; doors through bcc-doorlocks. Open: Assets/Property checks (no public contract), Access |
+| LAW8 | Partly | Operation journal and reconciliation commands; no import (decision 7). Audit outbox stays with Justice events |
+| LAW9 | Open | README and acceptance report written; the in-game two-player run and the owner's 1.0.0 decision remain |
 
-Următorul pas: pregătirea instanței staging după `staging/README.md`, apoi testul
-cu două personaje și MariaDB. Configurațiile pregătite sunt fragmente neactivate;
-Licenses și Access nu au fost modificate. Booking/custodie are acum rezervare, confirmare fizică și eliberare explicită;
-plasarea/reconectarea și sentințele rămân separate. Citările au acum integrare durabilă Contracts și plata proprie prin
-`/lawfines`; rămân deschise validarea financiară reală și politica finală. Vezi `docs/ALPHA5_CHECKPOINT.md` pentru limitele exacte.
-
-
-Alpha.8 (2026-10-19): 44 rute; Inventory mută instanța în locker privat cu receipt
-atomic/idempotent și limită de capacitate, apoi Law leagă proba prin Justice.
-MDT include colectare, istoric propriu, recovery/link nou confirmat și dispoziții
-juridice. Dispozițiile nu returnează/distrug fizic obiectul. Niciun fișier Justice
-nu a fost modificat. Vezi `docs/EVIDENCE.md`; acceptanța MariaDB/RedM și istoricul
-complet al mutărilor viitoare rămân gates distincte, nu sunt declarate închise.
+Tests: `python3 tests/run.py --server-cfg ../../../server.cfg` runs Law and the
+real Justice on a scratch MariaDB schema (898 checks, two offline characters as
+officer/judge and subject), the client checks and the MDT browser checks. See
+[docs/BETA1_CHECKPOINT.md](docs/BETA1_CHECKPOINT.md) and
+[docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md).
