@@ -335,7 +335,7 @@ English with a Romanian translation, chosen by the player's Core account languag
 | LAW6 | Done (beta) | Arrest → booking → release; UTC jail placement and return after escape; offline term; community-service units → Justice |
 | LAW7 | Done (beta) | Evidence collection, Justice link and guard, physical return/destruction after the disposition; armory; doors through bcc-doorlocks. Open: Assets/Property checks (no public contract), Access |
 | LAW8 | Partly | Operation journal and reconciliation commands; no import (decision 7). Audit outbox stays with Justice events |
-| LAW9 | Open | README and acceptance report written; the in-game two-player run and the owner's 1.0.0 decision remain |
+| LAW9 | Partly | README and acceptance report written; live console acceptance passed on the dev server (2026-10-21, 20/0/0); the in-game two-player run and the owner's 1.0.0 decision remain |
 
 Tests: `python3 tests/run.py --server-cfg ../../../server.cfg` runs Law and the
 real Justice on a scratch MariaDB schema (898 checks, two offline characters as

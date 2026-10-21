@@ -50,6 +50,14 @@ import. Payroll belongs to Society/Jobs/Economy.
 equals the value recorded on the live server
 (`6bb581bd8a1e636e650d974da1c97bbb2112633d3fb9f7d5055d91933fddf033`).
 
+Live console on the dev server, 2026-10-21: `LawSetupJurisdictions` (jurisdiction
+`c3298b30-9a0f-4686-aabe-b97bc4fff18a`), `LawSetupStatutes` registered=12 failed=0,
+`LawSetupEvidenceLockers` confirmed, `LawReleaseContractSmokeTest` ready=true
+routes=63/63 justice=0.3.0 store=ready, `LawAcceptanceTest <Ion> <Gigi>` 20 passed,
+0 failed, 0 skipped. Before the in-game run: the server has the `police` job and the
+`peace_officer` license, but no `judge` job or `judicial_commission` license, and the
+test characters hold neither profile yet (`duty_required` in the INFO lines).
+
 ## Live steps
 
 `refresh`; restart feather-admin, feather-inventory and bcc-law (feather-justice is
