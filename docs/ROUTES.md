@@ -77,7 +77,7 @@ Policy actions and their rule (officer / judicial / legal): [README](../README.m
 | `law.evidence.receipts.v1` | `caseId`, `cursor?` | `justice.evidence.view` | own collection receipts |
 | `law.evidence.attach.v1` \* | `caseId`, `transferRequestId`, `expectedCaseRevision` | `justice.evidence.link` | links a confirmed transfer (recovery) |
 | `law.evidence.list.v1` | `caseId`, `cursor?` | `justice.evidence.view` | `ListCaseEvidence` incl. removed links, with `physicalState` |
-| `law.evidence.remove.v1` \* | `caseId`, `evidenceLinkId`, `expectedRevision`, `disposition?` | `justice.evidence.link` (judicial with a disposition) | `RemoveEvidenceLink`; returned/destroyed queue the physical step ([evidence](EVIDENCE.md)) |
+| `law.evidence.remove.v1` \* | `caseId`, `evidenceLinkId`, `expectedRevision`, `disposition?` | `justice.evidence.link` (judicial with a disposition) | `RemoveEvidenceLink`; `destroyed` queues the destruction, `returned` is handed back by staff ([evidence](EVIDENCE.md)) |
 
 ## Court and records
 

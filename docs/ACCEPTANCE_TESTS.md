@@ -17,8 +17,8 @@ Expected: `PASS bcc-law: … 0 failed`, plus the client and MDT browser PASS lin
 
 ## 2. Live console (server running, players may be offline)
 
-After `refresh` and a restart of feather-admin, feather-inventory and bcc-law (their
-configuration or code changed; feather-justice is unchanged):
+After `refresh` and a restart of feather-admin, feather-inventory and bcc-law
+(feather-justice is unchanged):
 
 ```text
 LawSetupJurisdictions        -> department=new_hanover result=<uuid> (or already_registered)
@@ -59,8 +59,8 @@ Inventory/doorlocks/notification providers).
 | 11 | Community service: B at the task site, `/lawstatus` → Start a unit | a unit counts only after the full time on site; the last unit completes the sentence |
 | 12 | Search warrant (judge) → Field → Search | read-only list of B's items; Finish serves the warrant |
 | 13 | Seizure warrant → Evidence → Collect at the locker | item moves to the locker and is linked |
-| 14 | Judge: disposition "returned" | the item is back in B's inventory (try once with B's inventory full: stays pending, then completes after space is freed and `LawEvidenceRetry`) |
-| 15 | Disposition "destroyed" on another item | the item disappears |
+| 14 | Judge: disposition "returned" | the item stays in the locker and the MDT shows "return by staff"; staff hand it back to B |
+| 15 | Disposition "destroyed" on another item | the item disappears from the locker (`LawEvidenceStatus`: nothing pending or failed) |
 | 16 | B: `/lawalert Help at the bank` | A gets a notification in A's language and a blip at B for 2 minutes; B sees a confirmation |
 | 17 | B fires a weapon in Valentine | A gets "shots fired" once per minute; A firing does not alert |
 | 18 | Citation with a fine → B: `/lawfines` → Pay | payment confirmed by Contracts |

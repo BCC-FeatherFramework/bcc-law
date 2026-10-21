@@ -337,15 +337,36 @@ end }
 
 -- Inventory: instances owned by characters or lockers; guards registered by Justice.
 local items = { [501] = { name = 'evidence_knife', owner = GIGI, revision = 3 }, [502] = { name = 'evidence_letter', owner = GIGI, revision = 1 } }
-local guards, receipts, dispositions, full = {}, {}, {}, {}
+local guards, receipts = {}, {}
+-- Inventory ids: characters 100+, the Valentine evidence locker 900 (location law_evidence).
+local function InventoryOf(owner)
+    if owner == 'locker:valentine' then return 900 end
+    return owner == ION and 100 or 101
+end
 local function InvErr(code, message) return { ok = false, error = { code = code, message = message or code } } end
 local function LawAuth(name, ...) return Invoke('feather-inventory', 'bcc-law', name, ...) end
 mocks['feather-inventory'] = {
     initiate = function() return {
         Instances = { GetInstance = function(id)
-            if items[id] then return { ok = true, value = { id = id, definition = { name = items[id].name } } } end
+            if items[id] then return { ok = true, value = { id = id, inventoryId = InventoryOf(items[id].owner),
+                revision = items[id].revision, definition = { name = items[id].name } } } end
             return { ok = false, error = { code = 'not_found' } }
         end },
+        -- Inventory's public destructive operation: exact instance, expected owner
+        -- domain, destroy guards (Justice's evidence guard among them).
+        DestroyInstances = function(context, spec)
+            if type(context.reason) ~= 'string' or type(spec.instanceIds) ~= 'table' then return InvErr('invalid_input') end
+            local location = spec.inventoryId == 900 and 'law_evidence' or 'player'
+            if location ~= spec.expectedLocation then return InvErr('denied', 'Inventory owner domain does not match.') end
+            for _, id in ipairs(spec.instanceIds) do
+                if not items[id] or InventoryOf(items[id].owner) ~= spec.inventoryId then return InvErr('conflict') end
+                for _, guard in pairs(guards) do
+                    if guard({ id = id }) == false then return InvErr('denied', 'Removal blocked by a guard.') end
+                end
+            end
+            for _, id in ipairs(spec.instanceIds) do items[id] = nil end
+            return { ok = true, value = { inventoryId = spec.inventoryId, destroyedInstanceIds = spec.instanceIds } }
+        end,
         Guards = { RegisterDestroyGuard = function(name, fn) guards[name] = fn; return { ok = true, value = true } end,
             UnregisterDestroyGuard = function(name) guards[name] = nil end } } end,
     GetHealth = function() return { ok = true, value = { state = 'ready' } } end,
@@ -361,7 +382,7 @@ mocks['feather-inventory'] = {
         return { ok = true, value = { items = list } }
     end,
     GetLawEvidenceCapabilities = function() return { ok = true, value = { contract = 1, state = 'ready', transfers = 1, receipts = 1,
-        lockerSetup = 1, returns = 1, destruction = 1 } } end,
+        lockerSetup = 1, returns = 0, destruction = 0 } } end,
     SetupLawEvidenceLocker = function(p)
         local access = LawAuth('AuthorizeEvidenceOperation', 'setup', p)
         return access.ok and { ok = true, value = { lockerKey = p.lockerKey } } or InvErr('authorization_denied')
@@ -387,29 +408,6 @@ mocks['feather-inventory'] = {
         local list = {}
         for id, r in pairs(receipts) do if r.caseId == p.caseId then list[#list + 1] = { requestId = id, receipt = copy(r), createdAt = 'now' } end end
         return { ok = true, value = { items = list } }
-    end,
-    ReturnLawEvidence = function(p)
-        if dispositions[p.requestId] then return { ok = true, value = copy(dispositions[p.requestId]) } end
-        local access = LawAuth('AuthorizeEvidenceOperation', 'dispose', { evidenceLinkId = p.evidenceLinkId, itemId = p.itemId, disposition = 'returned' })
-        if not access.ok then return InvErr('authorization_denied') end
-        local item = items[p.itemId]
-        if not item then return InvErr('not_found') end
-        if not tostring(item.owner):find('^locker:') then return InvErr('not_in_locker') end
-        if full[p.recipientCharacterId] then return InvErr('inventory_full', 'Inventory has no available slots.') end
-        item.owner, item.revision = p.recipientCharacterId, item.revision + 1
-        dispositions[p.requestId] = { requestId = p.requestId, itemId = p.itemId, action = 'returned', recipientCharacterId = p.recipientCharacterId }
-        return { ok = true, value = copy(dispositions[p.requestId]) }
-    end,
-    DestroyLawEvidence = function(p)
-        if dispositions[p.requestId] then return { ok = true, value = copy(dispositions[p.requestId]) } end
-        local access = LawAuth('AuthorizeEvidenceOperation', 'dispose', { evidenceLinkId = p.evidenceLinkId, itemId = p.itemId, disposition = 'destroyed' })
-        if not access.ok then return InvErr('authorization_denied') end
-        for _, guard in pairs(guards) do
-            if guard({ id = p.itemId }) == false then return InvErr('denied', 'Removal blocked by a guard.') end
-        end
-        items[p.itemId] = nil
-        dispositions[p.requestId] = { requestId = p.requestId, itemId = p.itemId, action = 'destroyed' }
-        return { ok = true, value = copy(dispositions[p.requestId]) }
     end
 }
 started['feather-medical'], started['feather-weapons'] = nil, nil
@@ -436,7 +434,7 @@ Step(now + 10)
 
 -- Test context ---------------------------------------------------------------
 local t = { ion = ION, gigi = GIGI, uuid = uuid, J = J, Law = Law, LawConfig = lawEnv.LawConfig, sessions = sessions, world = world,
-    jobs = jobs, licenses = licenses, items = items, full = full, doors = doors, teleports = teleports, clientEvents = clientEvents,
+    jobs = jobs, licenses = licenses, items = items, doors = doors, teleports = teleports, clientEvents = clientEvents,
     notifications = notifications, rpcs = rpcs, adminAudit = adminAudit, obligations = obligations, sql = Api(), published = published }
 function t.check(label, condition, detail)
     checks = checks + 1

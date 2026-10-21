@@ -1,6 +1,7 @@
 -- Search and evidence: search warrant → read-only search → served; seizure warrant
 -- → collection into the locker → Justice link (destroy guard) → dispositions:
--- returned (item back to the person), destroyed (item gone), forfeited (stays).
+-- destroyed (Inventory's public DestroyInstances), returned (stays in the locker
+-- until staff hand it back), forfeited (stays).
 return function(t)
     t.items[503] = { name = 'evidence_coin', owner = t.gigi, revision = 0 }
     local case = t.law(5, 'law.cases.open.v1', { title = 'Smuggling', summary = 'Contraband suspected.' }, true).value
@@ -49,11 +50,6 @@ return function(t)
             if item.evidenceId == tostring(itemId) then return item end
         end
     end
-    local forged = t.invoke('feather-inventory', 'bcc-law', 'AuthorizeEvidenceOperation', 'dispose',
-        { evidenceLinkId = link(501).evidenceLinkId, itemId = 501, disposition = 'destroyed' })
-    t.check('a physical disposal without a recorded disposition is refused', not forged.ok, t.code(forged))
-    local early = t.invoke('bcc-law', 'feather-inventory', 'DestroyLawEvidence', { requestId = 'forged-1', evidenceLinkId = link(501).evidenceLinkId, itemId = 501 })
-    t.check('Inventory refuses to destroy without Law authority', not early.ok and t.items[501] ~= nil)
 
     local function dispose(itemId, disposition, judge)
         t.jobs[t.ion].judge = judge ~= false
@@ -66,44 +62,45 @@ return function(t)
     t.check('a disposition needs a judge', dispose(501, 'returned', false).code == 'authorization_denied')
     local returned = dispose(501, 'returned')
     t.check('returned disposition recorded in Justice', returned.ok and returned.value.disposition == 'returned' and returned.value.status == 'removed', t.code(returned))
-    t.run(100)
-    t.check('the item goes back to the person it was seized from', t.items[501].owner == t.gigi)
-    t.check('the physical step is shown as done', link(501).physicalState == 'done', link(501).physicalState)
+    t.run(16000)
+    t.check('a returned item stays in the locker until staff hand it back', t.items[501].owner == 'locker:valentine')
+    t.check('no automatic step is queued for a return', t.Law.Store.Disposition(link(501).evidenceLinkId) == nil)
+    t.check('the MDT shows the return as a staff step', link(501).physicalState == 'manual', link(501).physicalState)
     local destroyed = dispose(502, 'destroyed')
     t.check('destroyed disposition recorded', destroyed.ok, t.code(destroyed))
     t.run(100)
-    t.check('the destroyed item no longer exists', t.items[502] == nil)
+    t.check('the destroyed item no longer exists (Inventory public DestroyInstances)', t.items[502] == nil)
+    t.check('the destroy step is shown as done', link(502).physicalState == 'done', link(502).physicalState)
     local forfeited = dispose(503, 'forfeited')
     t.check('forfeited disposition recorded', forfeited.ok, t.code(forfeited))
     t.run(16000)
     t.check('a forfeited item stays in the locker', t.items[503] and t.items[503].owner == 'locker:valentine')
     t.check('no physical step is queued for a forfeiture', t.Law.Store.Disposition(link(503).evidenceLinkId) == nil)
     local rows = t.sql.value("SELECT COUNT(*) FROM bcc_law_evidence_dispositions WHERE state='done'")
-    t.check('two physical steps completed exactly once', tonumber(rows) == 2, rows)
+    t.check('one destroy step completed exactly once', tonumber(rows) == 1, rows)
     local status = t.command('LawEvidenceStatus')
     t.check('evidence status reports no pending or failed steps', status[1]:find('dispositionsPending=0 dispositionsFailed=0', 1, true), status[1])
 
-    -- A full recipient inventory keeps the return pending until there is room.
+    -- An item that already left the locker is never destroyed: staff attention, then requeue.
     t.items[504] = { name = 'evidence_watch', owner = t.gigi, revision = 2 }
     t.check('another item collected', collect(504, 2).ok)
-    t.full[t.gigi] = true
-    t.check('returned disposition for the watch recorded', dispose(504, 'returned').ok)
+    t.items[504].owner = t.gigi
+    t.check('destroyed disposition for the watch recorded', dispose(504, 'destroyed').ok)
     t.run(100)
-    local waiting = t.Law.Store.Disposition(link(504).evidenceLinkId)
-    t.check('a full recipient inventory keeps the return pending', waiting.state == 'pending' and waiting.last_code == 'inventory_full', waiting.state)
-    t.full[t.gigi] = nil
-    t.run(16000)
-    t.check('the return completes once there is room', t.items[504].owner == t.gigi
-        and t.Law.Store.Disposition(link(504).evidenceLinkId).state == 'done')
-
-    -- A step that cannot finish is reported and can be queued again by staff.
-    local unknown = t.uuid(777000)
-    t.Law.Store.DispositionQueue(unknown, case.caseId, 99999, 'returned', t.gigi)
-    t.run(16000)
-    local failed = t.Law.Store.Disposition(unknown)
-    t.check('a missing item fails the physical step for staff attention', failed.state == 'failed' and failed.last_code == 'not_found', failed.state)
-    local retry = t.command('LawEvidenceRetry', { unknown })
+    local stuck = t.Law.Store.Disposition(link(504).evidenceLinkId)
+    t.check('an item outside the lockers fails the destroy step', stuck.state == 'failed' and stuck.last_code == 'denied' and t.items[504] ~= nil,
+        stuck.state .. '/' .. tostring(stuck.last_code))
+    t.items[504].owner = 'locker:valentine'
+    local retry = t.command('LawEvidenceRetry', { link(504).evidenceLinkId })
     t.check('staff can queue a failed step again', retry[1]:find('requeued=true', 1, true), retry[1])
+    t.run(100)
+    t.check('the requeued destroy completes once the item is back in the locker', t.items[504] == nil
+        and t.Law.Store.Disposition(link(504).evidenceLinkId).state == 'done')
+    local unknown = t.uuid(777000)
+    t.Law.Store.DispositionQueue(unknown, case.caseId, 99999, 'destroyed', nil)
+    t.run(16000)
+    t.check('an item that is already gone counts as destroyed', t.Law.Store.Disposition(unknown).state == 'done'
+        and t.Law.Store.Disposition(unknown).last_code == 'already_absent')
     t.sql.exec('DELETE FROM bcc_law_evidence_dispositions WHERE evidence_link_id=?', unknown)
 
     local receipts = t.law(5, 'law.evidence.receipts.v1', { caseId = case.caseId })

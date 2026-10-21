@@ -310,8 +310,9 @@ Law is not declared fully ported only because it starts or the MDT opens.
 5. Licenses qualification contract: empty version-1 scope only, until Licenses
    publishes a scope vocabulary. Payroll belongs to Society/Jobs/Economy; Law has none.
 6. Inventory evidence: instance IDs as decimal strings; a Justice destroy guard while
-   linked; return/destruction executed by Inventory only after the Justice
-   disposition record (`ReturnLawEvidence`, `DestroyLawEvidence`).
+   linked. After the Justice disposition record, Law destroys a `destroyed` item
+   through Inventory's public `DestroyInstances`; `returned` items are handed back by
+   staff. Inventory itself is not changed for this (owner decision 2026-10-21).
 7. Clean install (no import); sealed cases and expungement through Justice.
 8. Additional independent consumer for validating Justice: reported separately as a
    Justice gate; not created artificially here.
@@ -333,12 +334,12 @@ English with a Romanian translation, chosen by the player's Core account languag
 | LAW4 | Done (beta) | Cases, parties, charges, warrants, statutes, penal-code editor, sealing/expunging, history; real-DB tests |
 | LAW5 | Done (beta) | Warnings and fines through Justice + Contracts; own-wallet payment (`/lawfines`). Payroll: owned by Society/Jobs |
 | LAW6 | Done (beta) | Arrest → booking → release; UTC jail placement and return after escape; offline term; community-service units → Justice |
-| LAW7 | Done (beta) | Evidence collection, Justice link and guard, physical return/destruction after the disposition; armory; doors through bcc-doorlocks. Open: Assets/Property checks (no public contract), Access |
+| LAW7 | Done (beta) | Evidence collection, Justice link and guard, physical destruction after the disposition (returns by staff); armory; doors through bcc-doorlocks. Open: Assets/Property checks (no public contract), Access |
 | LAW8 | Partly | Operation journal and reconciliation commands; no import (decision 7). Audit outbox stays with Justice events |
 | LAW9 | Partly | README and acceptance report written; live console acceptance passed on the dev server (2026-10-21, 20/0/0); the in-game two-player run and the owner's 1.0.0 decision remain |
 
 Tests: `python3 tests/run.py --server-cfg ../../../server.cfg` runs Law and the
-real Justice on a scratch MariaDB schema (898 checks, two offline characters as
+real Justice on a scratch MariaDB schema (899 checks, two offline characters as
 officer/judge and subject), the client checks and the MDT browser checks. See
 [docs/BETA1_CHECKPOINT.md](docs/BETA1_CHECKPOINT.md) and
 [docs/ACCEPTANCE_TESTS.md](docs/ACCEPTANCE_TESTS.md).

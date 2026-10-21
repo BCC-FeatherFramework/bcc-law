@@ -2,7 +2,6 @@ local maximum=9007199254740990
 local function Int(n,min,max) return type(n)=='number' and n%1==0 and n>=min and n<=max end
 local function Number(n,min,max) return type(n)=='number' and n==n and n>=min and n<=max end
 local setup={}
-local physical
 local collectFields={department=true,caseId=true,expectedCaseRevision=true,targetSource=true,warrantId=true,
     itemId=true,itemRevision=true,lockerKey=true,description=true,requestId=true}
 local function Payload(p,fields)
@@ -85,18 +84,6 @@ exports('AuthorizeEvidenceOperation',function(operation,p)
         if not key or not setup[key] or not LawConfig.Evidence.Lockers[key] then return Law.Err('authorization_denied','Explicit console setup required.') end
         return Law.Ok({locker=Law.Copy(LawConfig.Evidence.Lockers[key])})
     end
-    -- A physical return/destruction is allowed only for a disposition Justice
-    -- recorded and Law queued (see Law.DeliverDispositions).
-    if operation=='dispose' then
-        if type(p)~='table' or not Law.Uuid(p.evidenceLinkId) or not Int(p.itemId,1,maximum) or Law.Store.state~='ready' then
-            return Law.Err('invalid_input','Invalid disposition.')
-        end
-        local row=Law.Store.Disposition(p.evidenceLinkId:lower())
-        if not row or row.state~='pending' or tonumber(row.item_id)~=p.itemId or row.disposition~=p.disposition then
-            return Law.Err('authorization_denied','No recorded disposition for this item.')
-        end
-        return Law.Ok({recipientCharacterId=row.recipient_character_id})
-    end
     if type(p)~='table' or not Int(p.actorSource,1,65535) or not Law.Uuid(p.characterId) or not Law.Uuid(p.sessionId)
         or not Law.Token(p.department,48) or not Law.Uuid(p.caseId) then return Law.Err('invalid_input','Invalid actor/case context.') end
     local context={characterId=p.characterId,sessionId=p.sessionId}
@@ -118,22 +105,30 @@ local function LinkReceipt(p,actor,receipt,requestId,expectedRevision)
         details={transferRequestId=receipt.requestId,linkCode=r.code}} end
     return Law.Ok({transfer=receipt,link=r.value})
 end
--- Physical disposition (Justice workflow "Evidence collection": Inventory owns the
--- instance). Justice records the disposition first and it is immutable; then Law
--- asks Inventory to give the item back to the person it was seized from, or to
--- destroy it. A durable queue row makes the step retryable after restarts.
--- Forfeited items stay in the locker; a link removed without a disposition too.
-physical={returned='ReturnLawEvidence',destroyed='DestroyLawEvidence'}
--- A full recipient inventory (slots, weight, per-item limit) may free up: keep retrying.
+-- Physical disposition (Justice workflow "Evidence collection"). Justice records the
+-- disposition first and it is immutable. A destroyed item is then destroyed through
+-- Inventory's public DestroyInstances, which accepts only an item still in an
+-- evidence locker and applies the normal destroy guards (Justice's guard still
+-- vetoes an item another case holds). A durable queue row makes it retryable after
+-- restarts. Returned items stay in the locker until staff hand them back (Inventory
+-- offers no capacity-checked move for another resource); forfeited items stay too.
 local retryable={not_ready=true,dependency_unavailable=true,dependency_missing=true,internal=true,conflict=true,
-    limit_exceeded=true,inventory_full=true,weight_limit=true,item_limit=true,session_expired=true,
-    transaction_failed=true,weapons_unavailable=true}
+    session_expired=true,transaction_failed=true}
+local function InventoryApi()
+    if GetResourceState('feather-inventory')~='started' then return nil end
+    local ok,api=pcall(function() return exports['feather-inventory']:initiate() end)
+    return ok and type(api)=='table' and type(api.Instances)=='table' and type(api.DestroyInstances)=='function' and api or nil
+end
+local function Flat(called,r)
+    if not called or type(r)~='table' or type(r.ok)~='boolean' then return Law.Err('dependency_unavailable','Inventory returned no valid result.') end
+    if not r.ok and type(r.error)=='table' then return Law.Err(r.error.code,r.error.message) end
+    return r
+end
 function Law.QueueDisposition(link)
-    if type(link)~='table' or link.evidenceType~='inventory_item' or not physical[link.disposition or '']
+    if type(link)~='table' or link.evidenceType~='inventory_item' or link.disposition~='destroyed'
         or not Law.Uuid(link.evidenceLinkId) or Law.Store.state~='ready' then return false end
     local itemId=tonumber(link.evidenceId);if not itemId then return false end
-    Law.Store.DispositionQueue(link.evidenceLinkId,link.caseId,itemId,link.disposition,
-        Law.Uuid(link.subjectCharacterId) and link.subjectCharacterId or nil)
+    Law.Store.DispositionQueue(link.evidenceLinkId,link.caseId,itemId,link.disposition,nil)
     return true
 end
 local delivering=false
@@ -141,17 +136,16 @@ function Law.DeliverDispositions()
     if delivering or Law.Store.state~='ready' then return end
     delivering=true
     local ok,err=pcall(function()
-        local capabilities=Inventory('GetLawEvidenceCapabilities')
-        local inventory=capabilities.ok and type(capabilities.value)=='table' and capabilities.value.state=='ready' and capabilities.value or nil
-        if not inventory then return end
+        local api=InventoryApi();if not api then return end
         for _,row in ipairs(Law.Store.DispositionsPending(25)) do
-            local id=row.evidence_link_id
-            if inventory[row.disposition=='returned' and 'returns' or 'destruction']~=1 then Law.Store.DispositionMark(id,'pending','inventory_unsupported')
-            elseif row.disposition=='returned' and not Law.Uuid(row.recipient_character_id) then Law.Store.DispositionMark(id,'failed','recipient_unknown')
+            local id,itemId=row.evidence_link_id,tonumber(row.item_id)
+            local instance=Flat(pcall(api.Instances.GetInstance,itemId))
+            if not instance.ok and instance.code=='not_found' then Law.Store.DispositionMark(id,'done','already_absent')
+            elseif not instance.ok then Law.Store.DispositionMark(id,'pending',instance.code)
             else
-                local r=Inventory(physical[row.disposition],{requestId='law:evidence:'..row.disposition..':'..id,evidenceLinkId=id,
-                    itemId=tonumber(row.item_id),recipientCharacterId=row.recipient_character_id})
-                if r.ok then Law.Store.DispositionMark(id,'done',type(r.value)=='table' and r.value.alreadyAbsent and 'already_absent' or nil)
+                local r=Flat(pcall(api.DestroyInstances,{resource='bcc-law',reason='law.evidence.destroyed',correlationId='law:evidence:destroyed:'..id},
+                    {inventoryId=instance.value.inventoryId,instanceIds={itemId},expectedLocation='law_evidence'}))
+                if r.ok then Law.Store.DispositionMark(id,'done',nil)
                 elseif retryable[r.code] then Law.Store.DispositionMark(id,'pending',r.code)
                 else Law.Store.DispositionMark(id,'failed',r.code) end
             end
@@ -206,10 +200,10 @@ Law.Routes['law.evidence.list.v1']={
         if not Law.Current(actor.value) then return Law.Err('session_expired','Character changed.') end
         if r.ok and type(r.value)=='table' and Law.Store.state=='ready' then
             for _,item in ipairs(r.value.items or {}) do
-                if physical[item.disposition or ''] then
+                if item.disposition=='destroyed' then
                     local row=Law.Store.Disposition(item.evidenceLinkId)
                     item.physicalState=row and row.state or 'pending'
-                end
+                elseif item.disposition=='returned' then item.physicalState='manual' end
             end
         end
         return r
@@ -264,8 +258,8 @@ RegisterCommand('LawEvidenceStatus',function(source)
             tostring(row.item_id),row.disposition,tostring(row.last_code),tostring(row.attempts)))
     end
 end,true)
--- After staff fixed the cause (for example the recipient freed space), queue a failed
--- physical step again. The Inventory request ID stays the same, so it never runs twice.
+-- After staff fixed the cause (for example put the item back into the locker), queue a
+-- failed destroy step again. An item that is already gone counts as done.
 RegisterCommand('LawEvidenceRetry',function(source,args)
     if source~=0 then return end
     local id=args[1] and args[1]:lower()

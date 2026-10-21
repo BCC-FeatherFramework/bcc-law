@@ -79,8 +79,8 @@ Shots fired inside a configured area alert on-duty officers automatically.
 | `LawReleaseContractSmokeTest` | no | Version, routes, Justice release, store |
 | `LawAcceptanceTest [officerUUID] [subjectUUID]` | Law dev rows, removed after | Readiness, qualification and Law table checks |
 | `LawActiveCharacters` | no | UUIDs of characters online right now |
-| `LawEvidenceStatus` | no | Lockers and pending/failed physical evidence steps |
-| `LawEvidenceRetry <evidenceLinkId>` | yes | Queue a failed physical step again (same request ID) |
+| `LawEvidenceStatus` | no | Lockers and pending/failed evidence destruction steps |
+| `LawEvidenceRetry <evidenceLinkId>` | yes | Queue a failed destruction step again |
 
 ## Configuration (`config.lua`, server only)
 
@@ -109,7 +109,7 @@ To add a language, copy `locales/en.lua`, translate the values, add the file to
 | `bcc_law_placements` | Jail placement marker per character |
 | `bcc_law_service_progress`, `bcc_law_service_tasks` | Community-service units, each counted once |
 | `bcc_law_armory_claims` | Armory claims and the daily quota |
-| `bcc_law_evidence_dispositions` | Physical return/destruction steps queued after a Justice disposition |
+| `bcc_law_evidence_dispositions` | Destruction steps queued after a Justice `destroyed` disposition |
 
 Migrations are versioned and checksummed; version 1 is unchanged from earlier builds.
 
@@ -128,7 +128,7 @@ python3 tests/run.py --server-cfg ../../../server.cfg
 Runs bcc-law together with the real feather-justice on a throwaway MariaDB schema
 (`law_test_<pid>`, always dropped): lifecycle and migrations, setup, policy,
 arrest → booking → release, court → jail → offline term → release, community
-service, search and evidence with physical dispositions, alerts, the penal-code
+service, search and evidence with dispositions, alerts, the penal-code
 editor, citations, sealing, the acceptance command and the MDT ↔ client ↔ route
 contract. It also runs the client checks (`tests/client/`) and the MDT browser
 checks (`tests/ui.cjs`). The two offline test characters are the officer/judge and

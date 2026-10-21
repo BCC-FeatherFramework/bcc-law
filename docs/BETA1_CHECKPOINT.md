@@ -23,9 +23,10 @@ Earlier checkpoints are kept in `docs/history/` and describe superseded APIs.
   sentence in Justice in service mode. The pre-beta delivery table is dropped only if empty.
 - **Penal-code editor** for judges (register/revise/retire statutes with advisory
   fine and custody ranges) and the console seed `LawSetupStatutes` (12 statutes).
-- **Evidence dispositions are physical now**: returned → the item goes back to the
-  person it was seized from; destroyed → destroyed; forfeited → stays
-  (migration v3, Inventory `ReturnLawEvidence` / `DestroyLawEvidence`). See [evidence](EVIDENCE.md).
+- **Destroyed evidence is destroyed physically** through Inventory's existing public
+  `DestroyInstances` (queued in migration v3; Inventory itself is not changed).
+  Returned items stay in the locker until staff hand them back; forfeited items stay.
+  See [evidence](EVIDENCE.md).
 - **Doors**: booking and jail placement lock the facility's configured
   bcc-doorlocks doors (doorlocks stays the only owner of door state).
 - **Alerts**: `/lawalert`, shots fired inside configured areas, notifications in
@@ -45,7 +46,7 @@ import. Payroll belongs to Society/Jobs/Economy.
 ## Evidence
 
 `python3 tests/run.py --server-cfg ../../../server.cfg` on 2026-10-21:
-`PASS bcc-law: 898 checks, 0 failed`, `PASS client MDT transport: 26 checks`,
+`PASS bcc-law: 899 checks, 0 failed`, `PASS client MDT transport: 26 checks`,
 `PASS Law restraint client: 21 checks`, `PASS MDT browser logic`. Store v1 checksum
 equals the value recorded on the live server
 (`6bb581bd8a1e636e650d974da1c97bbb2112633d3fb9f7d5055d91933fddf033`).
@@ -60,9 +61,9 @@ test characters hold neither profile yet (`duty_required` in the INFO lines).
 
 ## Live steps
 
-`refresh`; restart feather-admin, feather-inventory and bcc-law (feather-justice is
-unchanged; it re-registers its evidence guard by itself after Inventory restarts);
-then `LawSetupJurisdictions`, `LawSetupStatutes`, `LawSetupEvidenceLockers`,
+`refresh`; restart feather-admin and bcc-law, and feather-inventory once more so it runs
+its original code again (feather-justice is unchanged and re-registers its evidence
+guard by itself after Inventory restarts); then `LawSetupJurisdictions`, `LawSetupStatutes`, `LawSetupEvidenceLockers`,
 `LawReleaseContractSmokeTest`, `LawAcceptanceTest <officerUUID> <subjectUUID>`.
 Migrations v2 and v3 apply at the first start.
 
